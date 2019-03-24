@@ -21,25 +21,27 @@ const Utf8ByteSequenceLengthError = error{
     Utf8InvalidStartByte,
 };
 pub fn utf8ByteSequenceLength(first_byte: u8) Utf8ByteSequenceLengthError!u3 {
-    var ret: u4 = undefined;
+    var ret: u8 = undefined;
     ret = utf8ByteSequenceLengthNoValidate(first_byte);
     if (ret > 4)
         return error.Utf8InvalidStartByte;
     return @intCast(u3, ret);
 }
 
-pub fn utf8ByteSequenceLengthNoValidate(first_byte: u8) u4 {
+pub fn utf8ByteSequenceLengthNoValidate(first_byte: u8) u8 {
     const utf8_skip_data = []u8{
       1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
       1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
       1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
       1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+      0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+            0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,// Continuation bytes
+      0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+            0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,// Continuation bytes
       2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
       3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,6,6,7,8, // Using \xfe and \xff allows utf-8 to encode 42-bits
     };
-    return @intCast(u4, utf8_skip_data[first_byte]);
+    return utf8_skip_data[first_byte];
 }
 
 /// Encodes the given codepoint into a UTF-8 byte sequence.
