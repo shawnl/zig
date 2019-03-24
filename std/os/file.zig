@@ -343,10 +343,22 @@ pub const File = struct {
         }
     }
 
-    pub fn getEndPos(self: File) GetSeekPosError!usize {
-        if (is_posix) {
+    pub fn getEndPos(self: File) GetSeekPosError!u64 {
+        if (builtin.os == builtin.Os.linux) {
+            var statx: posix.StatX = undefined;
+            const err = posix.getErrno(
+                posix.statx(self.handle, null, posix.AT_EMPTY_PATH, posix.STATX_SIZE, &statx));
+            if (err > 0) {
+                    // We do not make this an error code because if you get EBADF it's always a bug,
+                    // since the fd could have been reused.
+                    posix.EBADF => unreachable,
+                    posix.ENOMEM => error.SystemResources,
+                    else => os.unexpectedErrorPosix(err),
+            }
+            return statx.size;
+        } else if (is_posix) {
             const stat = try os.posixFStat(self.handle);
-            return @intCast(usize, stat.size);
+            return @intCast(u64, stat.size);
         } else if (is_windows) {
             var file_size: windows.LARGE_INTEGER = undefined;
             if (windows.GetFileSizeEx(self.handle, &file_size) == 0) {
@@ -357,7 +369,7 @@ pub const File = struct {
             }
             if (file_size < 0)
                 return error.Overflow;
-            return math.cast(usize, @intCast(u64, file_size));
+            return @intCast(u64, file_size);
         } else {
             @compileError("TODO support getEndPos on this OS");
         }
@@ -369,7 +381,24 @@ pub const File = struct {
     };
 
     pub fn mode(self: File) ModeError!Mode {
-        if (is_posix) {
+        if (builtin.os == builtin.Os.linux) {
+            var statx: posix.StatX = undefined;
+            const err = posix.getErrno(
+                posix.statx(self.handle, null, posix.AT_EMPTY_PATH, posix.STATX_MODE | posix.STATX_TYPE, &statx));
+            if (err > 0) {
+                return switch (err) {
+                    // We do not make this an error code because if you get EBADF it's always a bug,
+                    // since the fd could have been reused.
+                    posix.EBADF => unreachable,
+                    posix.ENOMEM => error.SystemResources,
+                    else => os.unexpectedErrorPosix(err),
+                };
+            }
+
+            // TODO: we should be able to cast u16 to ModeError!u32, making this
+            // explicit cast not necessary
+            return Mode(statx.mode);
+        } if (is_posix) {
             var stat: posix.Stat = undefined;
             const err = posix.getErrno(posix.fstat(self.handle, &stat));
             if (err > 0) {

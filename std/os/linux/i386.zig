@@ -331,7 +331,6 @@ pub const SYS_execveat = 322;
 pub const SYS_userfaultfd = 323;
 pub const SYS_membarrier = 324;
 pub const SYS_mlock2 = 325;
-pub const SYS_statx = 332;
 
 pub const O_CREAT = 0o100;
 pub const O_EXCL = 0o200;

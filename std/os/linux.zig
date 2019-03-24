@@ -1276,6 +1276,64 @@ pub fn fstatat(dirfd: i32, path: [*]const u8, stat_buf: *Stat, flags: u32) usize
     return syscall4(SYS_fstatat, @bitCast(usize, isize(dirfd)), @ptrToInt(path), @ptrToInt(stat_buf), flags);
 }
 
+pub fn major(dev: u64) u32 {
+    return @truncate(u32, (((dev)>>31>>1) & 0xfffff000) | (((dev)>>8) & 0x00000fff));
+}
+
+pub fn minor(dev: u64) u32 {
+    return @truncate(u32, (((dev)>>12) & 0xffffff00) | ((dev) & 0x000000ff));
+}
+
+// That this didn't include a length @sizeOf(StatX) argument was incredibly stupid design.....
+// Instead we have STATX__RESERVED in flags, which if set in a future version could write more data to
+// the buf.
+// StatX is v4.11+
+// TODO https://github.com/ziglang/zig/issues/265
+pub fn statx(dirfd: i32, path: [*]const u8, flags: u32, mask: u32, statxbuf: *StatX) usize {
+    var ret: usize = undefined;
+    if (flags & STATX__RESERVED) {
+        // See above. if the kernel is going to write more than expected this
+        // will break our type system, and a new function will have to be
+        // created with a differn't type.
+        return @intCast(usize, isize(-EINVAL));
+    }
+    ret = syscall5(SYS_statx, @bitCast(usize, isize(dirfd)), @ptrToInt(path), flags, mask, @ptrToInt(statxbuf));
+    if (getErrno(ret) == ENOSYS) {
+        const clear_flags = AT_STATX_SYNC_AS_STAT;
+        const supported_flags = AT_EMPTY_PATH | AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW | clear_flags;
+
+        if ((flags & ~supported_flags) != 0) {
+            return @intCast(usize, isize(-EINVAL));
+        }
+
+        var st: Stat = undefined;
+        ret = fstatat(dirfd, path, &st, flags & ~clear_flags);
+        if (ret != 0) {
+            return ret;
+        }
+
+        *statxbuf = StatX{
+            .mask = STATX_BASIC_STATS,
+            .blksize = st.blksize,
+            .nlink = st.nlink,
+            .uid = st.uid,
+            .gid = st.gid,
+            .mode = st.mode,
+            .ino = st.ino,
+            .size = st.size,
+            .blocks = st.blocks,
+            .atime = statx_convert_timestamp(st.atim),
+            .ctime = statx_convert_timestamp(st.ctim),
+            .mtime = statx_convert_timestamp(st.mtim),
+            .rdev_major = major(st.rdev),
+            .rdev_minor = minor(st.rdev),
+            .dev_major = major(st.dev),
+            .dev_minor = minor(st.dev),
+        };
+    }
+    return ret;
+}
+
 // TODO https://github.com/ziglang/zig/issues/265
 pub fn listxattr(path: [*]const u8, list: [*]u8, size: usize) usize {
     return syscall3(SYS_listxattr, @ptrToInt(path), @ptrToInt(list), size);
@@ -1517,6 +1575,69 @@ pub fn capget(hdrp: *cap_user_header_t, datap: *cap_user_data_t) usize {
 pub fn capset(hdrp: *cap_user_header_t, datap: *const cap_user_data_t) usize {
     return syscall2(SYS_capset, @ptrToInt(hdrp), @ptrToInt(datap));
 }
+
+fn statx_convert_timestamp(ts: timespec) StatXTimestamp {
+    return StatXTimestamp{
+        .sec = ts.tv_sec,
+        .nsec = ts.tv_nsec,
+    };
+}
+
+pub const StatXTimestamp = extern struct {
+    sec: i64,
+    nsec: u32,
+};
+
+pub const StatX = extern struct {
+    mask: u32,
+    blksize: u32,
+    attributes: u64,
+    nlink: u32,
+    uid: u32,
+    gid: u32,
+    mode: u16,
+    ino: u64,
+    size: u64,
+    blocks: u64,
+    attributes_mask: u64,
+
+    atime: StatXTimestamp,
+    btime: StatXTimestamp,
+    ctime: StatXTimestamp,
+    mtime: StatXTimestamp,
+
+    rdev_major: u32,
+    rdev_minor: u32,
+};
+
+pub const STATX_TYPE =             0x00000001;     //* Want/got stx_mode & S_IFMT */
+pub const STATX_MODE =             0x00000002;     //* Want/got stx_mode & ~S_IFMT */
+pub const STATX_NLINK =            0x00000004;     //* Want/got stx_nlink */
+pub const STATX_UID =              0x00000008;     //* Want/got stx_uid */
+pub const STATX_GID =              0x00000010;     //* Want/got stx_gid */
+pub const STATX_ATIME =            0x00000020;     //* Want/got stx_atime */
+pub const STATX_MTIME =            0x00000040;     //* Want/got stx_mtime */
+pub const STATX_CTIME =            0x00000080;     //* Want/got stx_ctime */
+pub const STATX_INO =              0x00000100;     //* Want/got stx_ino */
+pub const STATX_SIZE =             0x00000200;     //* Want/got stx_size */
+pub const STATX_BLOCKS =           0x00000400;     //* Want/got stx_blocks */
+pub const STATX_BASIC_STATS =      0x000007ff;     //* The stuff in the normal stat struct */
+pub const STATX_BTIME =            0x00000800;     //* Want/got stx_btime */
+pub const STATX_ALL =              0x00000fff;     //* All currently supported flags */
+pub const STATX__RESERVED =        0x80000000;     //* Reserved for future struct statx expansion */
+
+pub const STATX_ATTR_COMPRESSED =          0x00000004; //* [I] File is compressed by the fs */
+pub const STATX_ATTR_IMMUTABLE =           0x00000010; //* [I] File is marked immutable */
+pub const STATX_ATTR_APPEND =              0x00000020; //* [I] File is append-only */
+pub const STATX_ATTR_NODUMP =              0x00000040; //* [I] File is not to be dumped */
+pub const STATX_ATTR_ENCRYPTED =           0x00000800; //* [I] File requires key to decrypt in fs */
+
+pub const STATX_ATTR_AUTOMOUNT =           0x00001000; //* Dir: Automount trigger */
+
+pub const AT_STATX_SYNC_TYPE =        0x6000;
+pub const AT_STATX_SYNC_AS_STAT =     0x0000;
+pub const AT_STATX_FORCE_SYNC =       0x2000;
+pub const AT_STATX_DONT_SYNC =        0x4000;
 
 pub const inotify_event = extern struct {
     wd: i32,
