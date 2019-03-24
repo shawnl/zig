@@ -1,5 +1,6 @@
 const std = @import("../std.zig");
 const mem = std.mem;
+const unicode = std.unicode;
 
 pub const Token = struct {
     id: Id,
@@ -235,6 +236,7 @@ pub const Tokenizer = struct {
         StringLiteralBackslash,
         MultilineStringLiteralLine,
         CharLiteral,
+        CharLiteralUTF8,
         CharLiteralBackslash,
         CharLiteralHexEscape,
         CharLiteralEnd,
@@ -644,6 +646,10 @@ pub const Tokenizer = struct {
                         break;
                     },
                     else => {
+                        if ((c & 0x80) != 0) {
+                            expected_escape_digits = unicode.utf8ByteSequenceLengthNoValidate(c);
+                            seen_escape_digits = 1;
+                        }
                         if (c < 0x20 or c == 0x7f) {
                             result.id = Token.Id.Invalid;
                             break;
@@ -651,6 +657,14 @@ pub const Tokenizer = struct {
 
                         state = State.CharLiteralEnd;
                     },
+                },
+
+                State.CharLiteralUTF8 => {
+                    // Do not validate UTF-8 here. This should be handled by a streaming pre-validator
+                    seen_escape_digits += 1;
+                    if (seen_escape_digits == expected_escape_digits) {
+                        state = State.CharLiteralEnd;
+                    }
                 },
 
                 State.CharLiteralBackslash => switch (c) {
@@ -672,6 +686,9 @@ pub const Tokenizer = struct {
                         state = State.CharLiteralHexEscape;
                         seen_escape_digits = 0;
                         expected_escape_digits = 6;
+                    },
+                    'n', 'r', '\\', 't', '\'', '\"' => {
+                        // TODO
                     },
                     else => {
                         state = State.CharLiteralEnd;
