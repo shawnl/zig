@@ -17,7 +17,10 @@ pub fn utf8CodepointSequenceLength(c: u32) !u3 {
 /// Given the first byte of a UTF-8 codepoint,
 /// returns a number 1-4 indicating the total length of the codepoint in bytes.
 /// If this byte does not match the form of a UTF-8 start byte, returns Utf8InvalidStartByte.
-pub fn utf8ByteSequenceLength(first_byte: u8) !u3 {
+const Utf8ByteSequenceLengthError = error{
+    Utf8InvalidStartByte,
+};
+pub fn utf8ByteSequenceLength(first_byte: u8) Utf8ByteSequenceLengthError!u3 {
     var ret: u4 = undefined;
     ret = utf8ByteSequenceLengthNoValidate(first_byte);
     if (ret > 4)
@@ -74,27 +77,30 @@ pub fn utf8Encode(c: u32, out: []u8) !u3 {
     return length;
 }
 
-const Utf8DecodeError = Utf8Decode2Error || Utf8Decode3Error || Utf8Decode4Error;
+const Utf8DecodeError = Utf8Decode2Error || Utf8Decode3Error || Utf8Decode4Error || Utf8ByteSequenceLengthError || error{UTF8Truncated};
 
-/// Decodes the UTF-8 codepoint encoded in the given slice of bytes.
-/// bytes.len must be equal to utf8ByteSequenceLength(bytes[0]) catch unreachable.
-/// If you already know the length at comptime, you can call one of
-/// utf8Decode2,utf8Decode3,utf8Decode4 directly instead of this function.
-pub fn utf8Decode(bytes: []const u8) Utf8DecodeError!u32 {
-    return switch (bytes.len) {
+/// Decodes the UTF-8 codepoint encoded in the given slice of bytes and returns
+/// then length of the character decoded.
+pub fn utf8Decode(bytes: []const u8, ret: *u32) Utf8DecodeError!u3 {
+    var len = try utf8ByteSequenceLength(bytes[0]);
+    if (bytes.len < len) {
+        return error.UTF8Truncated;
+    }
+    ret.* = switch (len) {
         1 => u32(bytes[0]),
-        2 => utf8Decode2(bytes),
-        3 => utf8Decode3(bytes),
-        4 => utf8Decode4(bytes),
+        2 => try utf8Decode2(bytes[0..2]),
+        3 => try utf8Decode3(bytes[0..3]),
+        4 => try utf8Decode4(bytes[0..4]),
         else => unreachable,
     };
+    return len;
 }
 
 const Utf8Decode2Error = error{
     Utf8ExpectedContinuation,
     Utf8OverlongEncoding,
 };
-pub fn utf8Decode2(bytes: []const u8) Utf8Decode2Error!u32 {
+fn utf8Decode2(bytes: []const u8) Utf8Decode2Error!u32 {
     assert(bytes.len == 2);
     assert(bytes[0] & 0b11100000 == 0b11000000);
     var value: u32 = bytes[0] & 0b00011111;
@@ -113,7 +119,7 @@ const Utf8Decode3Error = error{
     Utf8OverlongEncoding,
     Utf8EncodesSurrogateHalf,
 };
-pub fn utf8Decode3(bytes: []const u8) Utf8Decode3Error!u32 {
+fn utf8Decode3(bytes: []const u8) Utf8Decode3Error!u32 {
     assert(bytes.len == 3);
     assert(bytes[0] & 0b11110000 == 0b11100000);
     var value: u32 = bytes[0] & 0b00001111;
@@ -137,7 +143,7 @@ const Utf8Decode4Error = error{
     Utf8OverlongEncoding,
     Utf8CodepointTooLarge,
 };
-pub fn utf8Decode4(bytes: []const u8) Utf8Decode4Error!u32 {
+fn utf8Decode4(bytes: []const u8) Utf8Decode4Error!u32 {
     assert(bytes.len == 4);
     assert(bytes[0] & 0b11111000 == 0b11110000);
     var value: u32 = bytes[0] & 0b00000111;
@@ -160,21 +166,12 @@ pub fn utf8Decode4(bytes: []const u8) Utf8Decode4Error!u32 {
     return value;
 }
 
+// TODO replace with something faster
 pub fn utf8ValidateSlice(s: []const u8) bool {
     var i: usize = 0;
     while (i < s.len) {
-        if (utf8ByteSequenceLength(s[i])) |cp_len| {
-            if (i + cp_len > s.len) {
-                return false;
-            }
-
-            if (utf8Decode(s[i .. i + cp_len])) |_| {} else |_| {
-                return false;
-            }
-            i += cp_len;
-        } else |err| {
-            return false;
-        }
+        var c: u32 = undefined;
+        i += utf8Decode(s[i..], &c) catch return false;
     }
     return true;
 }
@@ -288,19 +285,19 @@ test "utf8 encode" {
 fn testUtf8Encode() !void {
     // A few taken from wikipedia a few taken elsewhere
     var array: [4]u8 = undefined;
-    testing.expect((try utf8Encode(try utf8Decode("€"), array[0..])) == 3);
+    testing.expect((try utf8Encode('€', array[0..])) == 3);
     testing.expect(array[0] == 0b11100010);
     testing.expect(array[1] == 0b10000010);
     testing.expect(array[2] == 0b10101100);
 
-    testing.expect((try utf8Encode(try utf8Decode("$"), array[0..])) == 1);
+    testing.expect((try utf8Encode('$', array[0..])) == 1);
     testing.expect(array[0] == 0b00100100);
 
-    testing.expect((try utf8Encode(try utf8Decode("¢"), array[0..])) == 2);
+    testing.expect((try utf8Encode('¢', array[0..])) == 2);
     testing.expect(array[0] == 0b11000010);
     testing.expect(array[1] == 0b10100010);
 
-    testing.expect((try utf8Encode(try utf8Decode("𐍈"), array[0..])) == 4);
+    testing.expect((try utf8Encode('𐍈', array[0..])) == 4);
     testing.expect(array[0] == 0b11110000);
     testing.expect(array[1] == 0b10010000);
     testing.expect(array[2] == 0b10001101);
@@ -475,7 +472,10 @@ fn testDecode(bytes: []const u8) !u32 {
     const length = try utf8ByteSequenceLength(bytes[0]);
     if (bytes.len < length) return error.UnexpectedEof;
     testing.expect(bytes.len == length);
-    return utf8Decode(bytes);
+    var c: u32 = undefined;
+    c = 42; // Shut up compiler
+    _ = utf8Decode(bytes, &c);
+    return c;
 }
 
 /// Caller must free returned memory.
