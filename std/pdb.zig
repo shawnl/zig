@@ -558,7 +558,7 @@ const SuperBlock = packed struct {
     BlockSize: u32,
 
     /// The index of a block within the file, at which begins a bitfield representing
-    /// the set of all blocks within the file which are “free” (i.e. the data within
+    /// the set of all blocks within the file which are "free" (i.e. the data within
     /// that block is not used). See The Free Block Map for more information. Important:
     /// FreeBlockMapBlock can only be 1 or 2!
     FreeBlockMapBlock: u32,
@@ -568,20 +568,20 @@ const SuperBlock = packed struct {
     NumBlocks: u32,
 
     /// The size of the stream directory, in bytes. The stream directory contains
-    /// information about each stream’s size and the set of blocks that it occupies.
+    /// information about each stream's size and the set of blocks that it occupies.
     /// It will be described in more detail later.
     NumDirectoryBytes: u32,
 
     Unknown: u32,
 
     /// The index of a block within the MSF file. At this block is an array of
-    /// ulittle32_t’s listing the blocks that the stream directory resides on.
+    /// ulittle32_t's listing the blocks that the stream directory resides on.
     /// For large MSF files, the stream directory (which describes the block
     /// layout of each stream) may not fit entirely on a single block. As a
     /// result, this extra layer of indirection is introduced, whereby this
     /// block contains the list of blocks that the stream directory occupies,
     /// and the stream directory itself can be stitched together accordingly.
-    /// The number of ulittle32_t’s in this array is given by
+    /// The number of ulittle32_t's in this array is given by
     /// ceil(NumDirectoryBytes / BlockSize).
     BlockMapAddr: u32,
 };

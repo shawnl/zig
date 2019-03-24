@@ -7,6 +7,7 @@
 
 #include "tokenizer.hpp"
 #include "util.hpp"
+#include "utf8-lookup.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -406,8 +407,41 @@ void tokenize(Buf *buf, Tokenization *out) {
     out->line_offsets = allocate<ZigList<size_t>>(1);
 
     out->line_offsets->append(0);
+    // This also jumps forward when a char literal is read
+    unsigned remaining_bytes_in_cur_char = 0;
     for (t.pos = 0; t.pos < buf_len(t.buf); t.pos += 1) {
         uint8_t c = buf_ptr(t.buf)[t.pos];
+        uint32_t cp;
+        // Reject non-ASCII, except for valid UTF-8 inside strings and comments, and utf-8 character literals
+        // Note that this peaks ahead.
+        //
+        // In the zig version of the compiler we should look at these to build something streaming and fast:
+        // https://github.com/cyb70289/utf8/
+        // https://lemire.me/blog/2018/10/19/validating-utf-8-bytes-using-only-0-45-cycles-per-byte-avx-edition/
+        if (c & 0x80) {
+            if (remaining_bytes_in_cur_char > 0) {
+                remaining_bytes_in_cur_char--;
+            } else if (t.state == TokenizeStateLineComment ||
+                       t.state == TokenizeStateLineString ||
+                       t.state == TokenizeStateString ||
+                       t.state == TokenizeStateCharLiteral) {
+                uint32_t state = 0;
+                unsigned i;
+                remaining_bytes_in_cur_char = utf8_skip_data[c];
+                if (buf_len(t.buf) < (t.pos + remaining_bytes_in_cur_char - 1))
+                    tokenize_error(&t, "invalid UTF-8");
+                for (i = 0;i < remaining_bytes_in_cur_char; i++)
+                    utf8_decode(&state, &cp, (uint8_t)buf_ptr(t.buf)[t.pos + i]);
+                if (state != UTF8_ACCEPT)
+                    tokenize_error(&t, "invalid UTF-8");
+                remaining_bytes_in_cur_char--;
+                if (t.state == TokenizeStateCharLiteral) {
+                    t.pos += remaining_bytes_in_cur_char;
+                    remaining_bytes_in_cur_char = 0;
+                }
+            } else
+                invalid_char_error(&t, c);
+        }
         switch (t.state) {
             case TokenizeStateError:
                 break;
@@ -1149,7 +1183,12 @@ void tokenize(Buf *buf, Tokenization *out) {
                         t.state = TokenizeStateStringEscape;
                         break;
                     default:
-                        t.cur_tok->data.char_lit.c = c;
+                        if (c < 128)
+                            t.cur_tok->data.char_lit.c = c;
+                        else {
+                            t.cur_tok->data.char_lit.c = cp;
+                            cp = 0; // Help spot bugs
+                        }
                         t.state = TokenizeStateCharLiteralEnd;
                         break;
                 }

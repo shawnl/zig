@@ -2403,7 +2403,7 @@ pub fn supportsAnsiEscapeCodes(handle: FileHandle) bool {
 
 pub const PosixSocketError = error{
     /// Permission to create a socket of the specified type and/or
-    /// pro‐tocol is denied.
+    /// protocol is denied.
     PermissionDenied,
 
     /// The implementation does not support the specified address family.
@@ -3004,7 +3004,7 @@ pub const SpawnThreadError = error{
     ///    proc(5));
     /// *  the  maximum  number  of  PIDs, /proc/sys/kernel/pid_max, was
     ///    reached (see proc(5)); or
-    /// *  the PID limit (pids.max) imposed by the cgroup "process  num‐
+    /// *  the PID limit (pids.max) imposed by the cgroup "process  num-
     ///    ber" (PIDs) controller was reached.
     ThreadQuotaExceeded,
 
