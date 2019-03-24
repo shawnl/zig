@@ -7,6 +7,7 @@
 
 #include "tokenizer.hpp"
 #include "util.hpp"
+#include "utf8-lookup.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -219,6 +220,7 @@ enum TokenizeState {
     TokenizeStateSawDotDot,
     TokenizeStateSawAtSign,
     TokenizeStateCharCode,
+    TokenizeStateCharCodeStart,
     TokenizeStateError,
     TokenizeStateLBracket,
     TokenizeStateLBracketStar,
@@ -238,8 +240,7 @@ struct Tokenize {
     uint32_t radix;
     int32_t exp_add_amt;
     bool is_exp_negative;
-    size_t char_code_index;
-    size_t char_code_end;
+    size_t xdigits_seen;
     bool unicode;
     uint32_t char_code;
     int exponent_in_bin_or_dec;
@@ -407,8 +408,44 @@ void tokenize(Buf *buf, Tokenization *out) {
     out->line_offsets = allocate<ZigList<size_t>>(1);
 
     out->line_offsets->append(0);
+    // This also jumps forward when a char literal is read
+    unsigned remaining_bytes_in_cur_char = 0;
     for (t.pos = 0; t.pos < buf_len(t.buf); t.pos += 1) {
         uint8_t c = buf_ptr(t.buf)[t.pos];
+        uint32_t cp;
+        // Reject non-ASCII, except for valid UTF-8 inside strings and comments, and utf-8 character literals
+        // Note that this peaks ahead.
+        //
+        // In the zig version of the compiler we should look at these to build something streaming and fast:
+        // https://github.com/cyb70289/utf8/
+        // https://lemire.me/blog/2018/10/19/validating-utf-8-bytes-using-only-0-45-cycles-per-byte-avx-edition/
+        if (c & 0x80 && t.state != TokenizeStateError) {
+            if (remaining_bytes_in_cur_char > 0) {
+                remaining_bytes_in_cur_char--;
+            } else if (t.state == TokenizeStateLineComment ||
+                       t.state == TokenizeStateLineString ||
+                       t.state == TokenizeStateString ||
+                       t.state == TokenizeStateCharLiteral) {
+                uint32_t state = 0;
+                unsigned i;
+                remaining_bytes_in_cur_char = utf8_skip_data[c];
+                if (buf_len(t.buf) < (t.pos + remaining_bytes_in_cur_char - 1))
+                    tokenize_error(&t, "invalid UTF-8");
+                // this is a full validator implementing finite-state-automata
+                // https://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+                cp = 0;
+                for (i = 0;i < remaining_bytes_in_cur_char; i++)
+                    utf8_decode(&state, &cp, (uint8_t)buf_ptr(t.buf)[t.pos + i]);
+                if (state != UTF8_ACCEPT)
+                    tokenize_error(&t, "invalid UTF-8");
+                remaining_bytes_in_cur_char--;
+                if (t.state == TokenizeStateCharLiteral) {
+                    t.pos += remaining_bytes_in_cur_char;
+                    remaining_bytes_in_cur_char = 0;
+                }
+            } else
+                invalid_char_error(&t, c);
+        }
         switch (t.state) {
             case TokenizeStateError:
                 break;
@@ -1050,24 +1087,14 @@ void tokenize(Buf *buf, Tokenization *out) {
                         t.state = TokenizeStateCharCode;
                         t.radix = 16;
                         t.char_code = 0;
-                        t.char_code_index = 0;
-                        t.char_code_end = 2;
+                        t.xdigits_seen = 0;
                         t.unicode = false;
                         break;
                     case 'u':
-                        t.state = TokenizeStateCharCode;
+                        t.state = TokenizeStateCharCodeStart;
                         t.radix = 16;
                         t.char_code = 0;
-                        t.char_code_index = 0;
-                        t.char_code_end = 4;
-                        t.unicode = true;
-                        break;
-                    case 'U':
-                        t.state = TokenizeStateCharCode;
-                        t.radix = 16;
-                        t.char_code = 0;
-                        t.char_code_index = 0;
-                        t.char_code_end = 6;
+                        t.xdigits_seen = 0;
                         t.unicode = true;
                         break;
                     case 'n':
@@ -1092,20 +1119,35 @@ void tokenize(Buf *buf, Tokenization *out) {
                         invalid_char_error(&t, c);
                 }
                 break;
+            case TokenizeStateCharCodeStart:
+                if (c != '{')
+                    tokenize_error(&t, "expected {: '%c'", c);
+                t.state = TokenizeStateCharCode;
+                break;
             case TokenizeStateCharCode:
                 {
-                    uint32_t digit_value = get_digit_value(c);
-                    if (digit_value >= t.radix) {
-                        tokenize_error(&t, "invalid digit: '%c'", c);
-                    }
-                    t.char_code *= t.radix;
-                    t.char_code += digit_value;
-                    t.char_code_index += 1;
+                    if (c != '}') {
+                        uint32_t digit_value = get_digit_value(c);
+                        if (digit_value >= t.radix) {
+                            tokenize_error(&t, "invalid digit: '%c'", c);
+                        }
+                        t.char_code *= t.radix;
+                        t.char_code += digit_value;
+                        t.xdigits_seen += 1;
 
-                    if (t.char_code_index >= t.char_code_end) {
+                        if (t.xdigits_seen > 6)
+                            tokenize_error(&t, "expected }: '%c'", c);
+                    } else
+                        if (t.xdigits_seen % 2 != 0)
+                            tokenize_error(&t, "expected hex digit: '%c'", c);
+
+                    if (c == '}' || (!t.unicode && t.xdigits_seen == 2)) {
                         if (t.unicode) {
-                            if (t.char_code > 0x10ffff) {
-                                tokenize_error(&t, "unicode value out of range: %x", t.char_code);
+                            if (t.char_code > 0xD7FF &&
+                                t.char_code < 0xE000) {
+                                tokenize_error(&t, "unicode surrogate: 0x%x", t.char_code);
+                            } else if (t.char_code > 0x10ffff) {
+                                tokenize_error(&t, "unicode value out of range: 0x%x", t.char_code);
                             }
                             if (t.cur_tok->id == TokenIdCharLiteral) {
                                 t.cur_tok->data.char_lit.c = t.char_code;
@@ -1149,8 +1191,15 @@ void tokenize(Buf *buf, Tokenization *out) {
                     case '\\':
                         t.state = TokenizeStateStringEscape;
                         break;
+                    case '\n':
+                        tokenize_error(&t, "newline not allowed in character literal");
                     default:
-                        t.cur_tok->data.char_lit.c = c;
+                        if (c < 128)
+                            t.cur_tok->data.char_lit.c = c;
+                        else {
+                            // the utf8 parser/validator skipped forward for us and provided us this
+                            t.cur_tok->data.char_lit.c = cp;
+                        }
                         t.state = TokenizeStateCharLiteralEnd;
                         break;
                 }
@@ -1387,6 +1436,7 @@ void tokenize(Buf *buf, Tokenization *out) {
             break;
         case TokenizeStateStringEscape:
         case TokenizeStateCharCode:
+        case TokenizeStateCharCodeStart:
             if (t.cur_tok->id == TokenIdStringLiteral) {
                 tokenize_error(&t, "unterminated string");
             } else if (t.cur_tok->id == TokenIdCharLiteral) {
