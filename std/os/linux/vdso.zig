@@ -6,10 +6,14 @@ const mem = std.mem;
 const maxInt = std.math.maxInt;
 
 pub fn lookup(vername: []const u8, name: []const u8) usize {
-    const vdso_addr = std.os.linuxGetAuxVal(std.elf.AT_SYSINFO_EHDR);
-    if (vdso_addr == 0) return 0;
-
-    const eh = @intToPtr(*elf.Ehdr, vdso_addr);
+    var eh: *elf.Ehdr = undefined;
+    var vdso_addr: usize = undefined;
+    if (linux.vdso_addr_maybe) |addr| {
+        eh = addr;
+        vdso_addr = @ptrToInt(addr);
+    } else {
+        return 0;
+    }
     var ph_addr: usize = vdso_addr + eh.e_phoff;
     const ph = @intToPtr(*elf.Phdr, ph_addr);
 

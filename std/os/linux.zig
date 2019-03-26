@@ -1534,6 +1534,33 @@ pub const dirent64 = extern struct {
     d_name: u8, // field address is the address of first byte of name https://github.com/ziglang/zig/issues/173
 };
 
+// see also ox.posix_environ_maybe and os.posix_argv_maybe
+pub var elf_aux_maybe: ?[*]std.elf.Auxv = null;
+pub var vdso_addr_maybe: ?*std.elf.Ehdr = null;
+///    *  the process's effective user ID did not match its real user ID or
+///       the process's effective group ID did not match its real group ID
+///       (typically this is the result of executing a set-user-ID or set-
+///       group-ID program);
+///    *  the effective capability bit was set on the executable file; or
+///    *  the process has a nonempty permitted capability set.
+///    Secure execution may also be required if triggered by some Linux
+///    security modules.
+pub var secure_mode: bool = false;
+
+/// See std.elf for the constants.
+pub fn get_aux_val(index: usize) usize {
+    if (builtin.link_libc) {
+        return usize(std.c.getauxval(index));
+    } else if (linux_elf_aux_maybe) |auxv| {
+        var i: usize = 0;
+        while (auxv[i].a_type != std.elf.AT_NULL) : (i += 1) {
+            if (auxv[i].a_type == index)
+                return auxv[i].a_un.a_val;
+        }
+    }
+    return 0;
+}
+
 test "import" {
     if (builtin.os == builtin.Os.linux) {
         _ = @import("linux/test.zig");

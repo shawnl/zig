@@ -6,8 +6,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const assert = std.debug.assert;
 
-var argc_ptr: [*]usize = undefined;
-
 comptime {
     const strong_linkage = builtin.GlobalLinkage.Strong;
     if (builtin.link_libc) {
@@ -22,25 +20,26 @@ comptime {
 nakedcc fn _start() noreturn {
     switch (builtin.arch) {
         builtin.Arch.x86_64 => {
-            argc_ptr = asm ("lea (%%rsp), %[argc]"
-                : [argc] "=r" (-> [*]usize)
+            std.os.posix_argv_maybe = asm ("lea (%%rsp), %[argc]"
+                : [argc] "=r" (-> ?[*]?[*]u8)
             );
         },
         builtin.Arch.i386 => {
-            argc_ptr = asm ("lea (%%esp), %[argc]"
-                : [argc] "=r" (-> [*]usize)
+            std.os.posix_argv_maybe = asm ("lea (%%esp), %[argc]"
+                : [argc] "=r" (-> ?[*]?[*]u8)
             );
         },
         builtin.Arch.aarch64, builtin.Arch.aarch64_be => {
-            argc_ptr = asm ("mov %[argc], sp"
-                : [argc] "=r" (-> [*]usize)
+            std.os.posix_argv_maybe = asm ("mov %[argc], sp"
+                : [argc] "=r" (-> ?[*]?[*]u8)
             );
         },
         else => @compileError("unsupported arch"),
     }
+
     // If LLVM inlines stack variables into _start, they will overwrite
-    // the command line argument data.
-    @noInlineCall(posixCallMainAndExit);
+    // the program initilization state.
+    @noInlineCall(callMainAndExit);
 }
 
 extern fn WinMainCRTStartup() noreturn {
@@ -51,22 +50,24 @@ extern fn WinMainCRTStartup() noreturn {
     std.os.windows.ExitProcess(callMain());
 }
 
-// TODO https://github.com/ziglang/zig/issues/265
-fn posixCallMainAndExit() noreturn {
+noinline fn posixInitilize() void {
     if (builtin.os == builtin.Os.freebsd) {
         @setAlignStack(16);
     }
-    const argc = argc_ptr[0];
-    const argv = @ptrCast([*][*]u8, argc_ptr + 1);
-
-    const envp_optional = @ptrCast([*]?[*]u8, argv + argc + 1);
+    const argc = @ptrCast(*usize, std.os.posix_argv_maybe.?).*;
+    // The _start code actually sets this to argc_ptr, in order to pass it
+    // It has to be passed in a global variable because LLVM doesn't understand
+    // the contraints of _start(), and clobbers the initilization state.
+    std.os.posix_argv_maybe = @ptrCast(?[*]?[*]u8, std.os.posix_argv_maybe.? + 1);
+    const argv = @ptrCast([*]usize, std.os.posix_argv_maybe);
+    const envp = argv + argc + 1;
+    std.os.posix_environ_maybe = @ptrCast([*]?[*]u8, envp);
     var envp_count: usize = 0;
-    while (envp_optional[envp_count]) |_| : (envp_count += 1) {}
-    const envp = @ptrCast([*][*]u8, envp_optional)[0..envp_count];
+    while (envp[envp_count] != 0) : (envp_count += 1) {}
     if (builtin.os == builtin.Os.linux) {
         // Scan auxiliary vector.
-        const auxv = @ptrCast([*]std.elf.Auxv, envp.ptr + envp_count + 1);
-        std.os.linux_elf_aux_maybe = auxv;
+        const auxv = @ptrCast([*]std.elf.Auxv, envp + envp_count + 1);
+        std.os.linux.elf_aux_maybe = auxv;
         var i: usize = 0;
         var at_phdr: usize = 0;
         var at_phnum: usize = 0;
@@ -77,28 +78,32 @@ fn posixCallMainAndExit() noreturn {
                 std.elf.AT_PHDR => at_phdr = auxv[i].a_un.a_val,
                 std.elf.AT_PHNUM => at_phnum = auxv[i].a_un.a_val,
                 std.elf.AT_PHENT => at_phent = auxv[i].a_un.a_val,
+                // This not needed by TLS initilization, but is useful to store now
+                std.elf.AT_SYSINFO_EHDR => std.os.linux.vdso_addr_maybe = @intToPtr(?*std.elf.Ehdr, auxv[i].a_un.a_val),
+                std.elf.AT_SECURE => {
+                    if (auxv[i].a_un.a_val > 0) {
+                        std.os.linux.secure_mode = true;
+                    }
+                },
                 else => {},
             }
         }
         if (!builtin.single_threaded) linuxInitializeThreadLocalStorage(at_phdr, at_phnum, at_phent);
     }
-
-    std.os.posix.exit(callMainWithArgs(argc, argv, envp));
 }
 
-// This is marked inline because for some reason LLVM in release mode fails to inline it,
-// and we want fewer call frames in stack traces.
-inline fn callMainWithArgs(argc: usize, argv: [*][*]u8, envp: [][*]u8) u8 {
-    std.os.ArgIteratorPosix.raw = argv[0..argc];
-    std.os.posix_environ_raw = envp;
-    return callMain();
+fn callMainAndExit() noreturn {
+    posixInitilize();
+
+    // Prevent the optimizer from merging initialization code and user code
+    asm ("" : "+r"(stage2) : : "memory" );
+    std.os.posix.exit(callMain());
 }
 
 extern fn main(c_argc: i32, c_argv: [*][*]u8, c_envp: [*]?[*]u8) i32 {
-    var env_count: usize = 0;
-    while (c_envp[env_count] != null) : (env_count += 1) {}
-    const envp = @ptrCast([*][*]u8, c_envp)[0..env_count];
-    return callMainWithArgs(@intCast(usize, c_argc), c_argv, envp);
+    std.os.posix_argv_maybe = @ptrCast(?[*]?[*]u8, c_argv);
+    std.os.posix_environ_maybe = @ptrCast([*]?[*]u8, c_envp);
+    std.os.posix.exit(callMain());
 }
 
 // This is marked inline because for some reason LLVM in release mode fails to inline it,

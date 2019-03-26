@@ -674,32 +674,23 @@ fn posixExecveErrnoToErr(err: usize) PosixExecveError {
     }
 }
 
-pub var linux_elf_aux_maybe: ?[*]std.elf.Auxv = null;
-pub var posix_environ_raw: [][*]u8 = undefined;
-
-/// See std.elf for the constants.
-pub fn linuxGetAuxVal(index: usize) usize {
-    if (builtin.link_libc) {
-        return usize(std.c.getauxval(index));
-    } else if (linux_elf_aux_maybe) |auxv| {
-        var i: usize = 0;
-        while (auxv[i].a_type != std.elf.AT_NULL) : (i += 1) {
-            if (auxv[i].a_type == index)
-                return auxv[i].a_un.a_val;
-        }
-    }
-    return 0;
-}
+// See also linux.elf_aux_maybe and linux.vdso_addr_maybe
+// TODO https://github.com/ziglang/zig/issues/265
+pub var posix_environ_maybe: ?[*]?[*]u8 = null;
+pub var posix_argv_maybe: ?[*]?[*]u8 = null;
 
 pub fn getBaseAddress() usize {
     switch (builtin.os) {
         builtin.Os.linux => {
-            const base = linuxGetAuxVal(std.elf.AT_BASE);
+            const base = linux.get_aux_val(std.elf.AT_BASE);
             if (base != 0) {
                 return base;
             }
-            const phdr = linuxGetAuxVal(std.elf.AT_PHDR);
-            return phdr - @sizeOf(std.elf.Ehdr);
+            const phdr = linux.get_aux_val(std.elf.AT_PHDR);
+            if (phdr != 0) {
+                return phdr - @sizeOf(std.elf.Ehdr);
+            }
+            return 0;
         },
         builtin.Os.macosx, builtin.Os.freebsd, builtin.Os.netbsd => {
             return @ptrToInt(&std.c._mh_execute_header);
@@ -743,16 +734,20 @@ pub fn getEnvMap(allocator: *Allocator) !BufMap {
             try result.setMove(key, value);
         }
     } else {
-        for (posix_environ_raw) |ptr| {
-            var line_i: usize = 0;
-            while (ptr[line_i] != 0 and ptr[line_i] != '=') : (line_i += 1) {}
-            const key = ptr[0..line_i];
+        if (posix_environ_maybe) |environ| {
+            var i: usize = 0;
+            while (environ[i] != null) : (i += 1) {
+                var pair = environ[i].?;
+                var line_i: usize = 0;
+                while (pair[line_i] != 0 and pair[line_i] != '=') : (line_i += 1) {}
+                const key = pair[0..line_i];
 
-            var end_i: usize = line_i;
-            while (ptr[end_i] != 0) : (end_i += 1) {}
-            const value = ptr[line_i + 1 .. end_i];
+                var end_i: usize = line_i;
+                while (pair[end_i] != 0) : (end_i += 1) {}
+                const value = pair[line_i + 1 .. end_i];
 
-            try result.set(key, value);
+                try result.set(key, value);
+            }
         }
         return result;
     }
@@ -765,17 +760,21 @@ test "os.getEnvMap" {
 
 /// TODO make this go through libc when we have it
 pub fn getEnvPosix(key: []const u8) ?[]const u8 {
-    for (posix_environ_raw) |ptr| {
-        var line_i: usize = 0;
-        while (ptr[line_i] != 0 and ptr[line_i] != '=') : (line_i += 1) {}
-        const this_key = ptr[0..line_i];
-        if (!mem.eql(u8, key, this_key)) continue;
+    if (posix_environ_maybe) |environ| {
+        var i: usize = 0;
+        while (environ[i] != null) : (i += 1) {
+            var pair = environ[i].?;
+            var line_i: usize = 0;
+            while (pair[line_i] != 0 and pair[line_i] != '=') : (line_i += 1) {}
+            const this_key = pair[0..line_i];
+            if (!mem.eql(u8, key, this_key)) continue;
 
-        var end_i: usize = line_i;
-        while (ptr[end_i] != 0) : (end_i += 1) {}
-        const this_value = ptr[line_i + 1 .. end_i];
+            var end_i: usize = line_i;
+            while (pair[end_i] != 0) : (end_i += 1) {}
+            const this_value = pair[line_i + 1 .. end_i];
 
-        return this_value;
+            return this_value;
+        }
     }
     return null;
 }
@@ -1938,17 +1937,23 @@ pub const ArgIteratorPosix = struct {
     index: usize,
     count: usize,
 
-    pub fn init() ArgIteratorPosix {
-        return ArgIteratorPosix{
-            .index = 0,
-            .count = raw.len,
-        };
+    pub fn init() !ArgIteratorPosix {
+        if (posix_argv_maybe) |argv| {
+            var i: usize = 0;
+            while (argv[i] != null) : (i += 1) {}
+            return ArgIteratorPosix{
+                .index = 0,
+                .count = i,
+            };
+        } else {
+            return error.NotFound;
+        }
     }
 
     pub fn next(self: *ArgIteratorPosix) ?[]const u8 {
         if (self.index == self.count) return null;
 
-        const s = raw[self.index];
+        const s = posix_argv_maybe.?[self.index];
         self.index += 1;
         return cstr.toSlice(s);
     }
@@ -1959,10 +1964,6 @@ pub const ArgIteratorPosix = struct {
         self.index += 1;
         return true;
     }
-
-    /// This is marked as public but actually it's only meant to be used
-    /// internally by zig's startup code.
-    pub var raw: [][*]u8 = undefined;
 };
 
 pub const ArgIteratorWindows = struct {
@@ -2119,7 +2120,7 @@ pub const ArgIterator = struct {
 
     inner: InnerType,
 
-    pub fn init() ArgIterator {
+    pub fn init() !ArgIterator {
         return ArgIterator{ .inner = InnerType.init() };
     }
 
