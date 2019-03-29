@@ -969,9 +969,6 @@ pub fn symLinkPosix(existing_path: []const u8, new_path: []const u8) PosixSymLin
     return symLinkPosixC(&existing_path_c, &new_path_c);
 }
 
-// here we replace the standard +/ with -_ so that it can be used in a file name
-const b64_fs_encoder = base64.Base64Encoder.init("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_", base64.standard_pad_char);
-
 /// TODO remove the allocator requirement from this API
 pub fn atomicSymLink(allocator: *Allocator, existing_path: []const u8, new_path: []const u8) !void {
     if (symLink(existing_path, new_path)) {
@@ -990,7 +987,7 @@ pub fn atomicSymLink(allocator: *Allocator, existing_path: []const u8, new_path:
     tmp_path[dirname.len] = os.path.sep;
     while (true) {
         try getRandomBytes(rand_buf[0..]);
-        b64_fs_encoder.encode(tmp_path[dirname.len + 1 ..], rand_buf);
+        base64.urlsafe_encoder.encode(tmp_path[dirname.len + 1 ..], rand_buf);
 
         if (symLink(existing_path, tmp_path)) {
             return rename(tmp_path, new_path);
@@ -1147,7 +1144,7 @@ pub const AtomicFile = struct {
 
         while (true) {
             try getRandomBytes(rand_buf[0..]);
-            b64_fs_encoder.encode(tmp_path_buf[dirname_component_len..tmp_path_len], rand_buf);
+            base64.urlsafe_encoder.encode(tmp_path_buf[dirname_component_len..tmp_path_len], rand_buf);
 
             const file = os.File.openWriteNoClobberC(&tmp_path_buf, mode) catch |err| switch (err) {
                 error.PathAlreadyExists => continue,
