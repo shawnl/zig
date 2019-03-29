@@ -171,7 +171,7 @@ pub fn isLower(c: u8) bool {
 }
 
 pub fn isPrint(c: u8) bool {
-    return inTable(c, tIndex.Graph) or c == ' ';
+    return iGraph(c) or c == ' ';
 }
 
 pub fn isPunct(c: u8) bool {
@@ -212,6 +212,41 @@ pub fn toLower(c: u8) u8 {
     } else {
         return c;
     }
+}
+
+// TODO This is not inside charToDigit() due to a bug https://github.com/ziglang/zig/issues/2128#issuecomment-477877639
+const NOT = 0xff;
+const swtch = []u8{
+//  All XDigit code points in this table are in their place in this ASCII+128 table.
+//    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,  10,  11,  12,  13,  14,  15
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+      0,   1,   2,   3,   4,   5,   6,   7,   8,   9, NOT, NOT, NOT, NOT, NOT, NOT,
+
+    NOT, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF,  16,  17,  18,  19,  20,  21,  22,  23,  24,
+     25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35, NOT, NOT, NOT, NOT, NOT,
+    NOT, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,  16,  17,  18,  19,  20,  21,  22,  23,  24,
+     25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35, NOT, NOT, NOT, NOT, NOT,
+
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+    NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT, NOT,
+};
+
+pub fn charToDigit(c: u8, radix: u8) (error{InvalidCharacter}!u6) {
+    @import("std").debug.assert(radix <= 35);
+
+    const value = swtch[c];
+    if (value >= radix) return error.InvalidCharacter;
+
+    return @intCast(u6, value);
 }
 
 test "ascii character classes" {

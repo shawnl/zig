@@ -4,6 +4,7 @@ const assert = std.debug.assert;
 const net = @This();
 const posix = std.os.posix;
 const mem = std.mem;
+const ascii = std.ascii;
 
 pub const TmpWinAddr = struct {
     family: u8,
@@ -164,7 +165,7 @@ pub fn parseIp6(buf: []const u8) !Ip6Addr {
             scope_id = true;
             saw_any_digits = false;
         } else {
-            const digit = try std.fmt.charToDigit(c, 16);
+            const digit = try ascii.charToDigit(c, 16);
             if (@mulWithOverflow(u16, x, 16, &x)) {
                 return error.Overflow;
             }

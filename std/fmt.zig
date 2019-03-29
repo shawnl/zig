@@ -4,6 +4,7 @@ const debug = std.debug;
 const assert = debug.assert;
 const testing = std.testing;
 const mem = std.mem;
+const ascii = std.ascii;
 const builtin = @import("builtin");
 const errol = @import("fmt/errol.zig");
 const lossyCast = std.math.lossyCast;
@@ -815,7 +816,7 @@ pub fn parseUnsigned(comptime T: type, buf: []const u8, radix: u8) ParseUnsigned
     var x: T = 0;
 
     for (buf) |c| {
-        const digit = try charToDigit(c, radix);
+        const digit = try ascii.charToDigit(c, radix);
 
         if (x != 0) x = try math.mul(T, x, try math.cast(T, radix));
         x = try math.add(T, x, try math.cast(T, digit));
@@ -855,19 +856,6 @@ pub const parseFloat = @import("fmt/parse_float.zig").parseFloat;
 
 test "fmt.parseFloat" {
     _ = @import("fmt/parse_float.zig");
-}
-
-pub fn charToDigit(c: u8, radix: u8) (error{InvalidCharacter}!u8) {
-    const value = switch (c) {
-        '0'...'9' => c - '0',
-        'A'...'Z' => c - 'A' + 10,
-        'a'...'z' => c - 'a' + 10,
-        else => return error.InvalidCharacter,
-    };
-
-    if (value >= radix) return error.InvalidCharacter;
-
-    return value;
 }
 
 fn digitToChar(digit: u8, uppercase: bool) u8 {
@@ -1420,8 +1408,8 @@ pub fn hexToBytes(out: []u8, input: []const u8) !void {
 
     var in_i: usize = 0;
     while (in_i != input.len) : (in_i += 2) {
-        const hi = try charToDigit(input[in_i], 16);
-        const lo = try charToDigit(input[in_i + 1], 16);
+        const hi = try ascii.charToDigit(input[in_i], 16);
+        const lo = try ascii.charToDigit(input[in_i + 1], 16);
         out[in_i / 2] = (hi << 4) | lo;
     }
 }
