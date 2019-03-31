@@ -1,7 +1,5 @@
-const std = @import("std.zig");
+const std = @import("../std.zig");
 const builtin = @import("builtin");
-const AtomicOrder = builtin.AtomicOrder;
-const AtomicRmwOp = builtin.AtomicRmwOp;
 const testing = std.testing;
 const SpinLock = std.SpinLock;
 const linux = std.os.linux;
@@ -54,9 +52,9 @@ else switch (builtin.os) {
             mutex: *Mutex,
 
             pub fn release(self: Held) void {
-                const c = @atomicRmw(i32, &self.mutex.lock, AtomicRmwOp.Sub, 1, AtomicOrder.Release);
+                const c = @atomicRmw(i32, &self.mutex.lock, .Sub, 1, .Release);
                 if (c != 1) {
-                    _ = @atomicRmw(i32, &self.mutex.lock, AtomicRmwOp.Xchg, 0, AtomicOrder.Release);
+                    _ = @atomicRmw(i32, &self.mutex.lock, .Xchg, 0, .SeqCst);
                     const rc = linux.futex_wake(&self.mutex.lock, linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG, 1);
                     switch (linux.getErrno(rc)) {
                         0 => {},
@@ -74,10 +72,10 @@ else switch (builtin.os) {
         pub fn deinit(self: *Mutex) void {}
 
         pub fn acquire(self: *Mutex) Held {
-            var c = @cmpxchgWeak(i32, &self.lock, 0, 1, AtomicOrder.Acquire, AtomicOrder.Monotonic) orelse
+            var c = @cmpxchgWeak(i32, &self.lock, 0, 1, .Acquire, .Monotonic) orelse
                 return Held{ .mutex = self };
             if (c != 2)
-                c = @atomicRmw(i32, &self.lock, AtomicRmwOp.Xchg, 2, AtomicOrder.Acquire);
+                c = @atomicRmw(i32, &self.lock, .Xchg, 2, .Acquire);
             while (c != 0) {
                 const rc = linux.futex_wait(&self.lock, linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG, 2, null);
                 switch (linux.getErrno(rc)) {
@@ -85,7 +83,7 @@ else switch (builtin.os) {
                     linux.EINVAL => unreachable,
                     else => unreachable,
                 }
-                c = @atomicRmw(i32, &self.lock, AtomicRmwOp.Xchg, 2, AtomicOrder.Acquire);
+                c = @atomicRmw(i32, &self.lock, .Xchg, 2, .Acquire);
             }
             return Held{ .mutex = self };
         }

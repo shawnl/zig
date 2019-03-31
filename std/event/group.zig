@@ -19,7 +19,7 @@ pub fn Group(comptime ReturnType: type) type {
             builtin.TypeId.ErrorUnion => |payload| payload.error_set,
             else => void,
         };
-        const Stack = std.atomic.Stack(promise->ReturnType);
+        const Stack = std.sync.Stack(promise->ReturnType);
 
         pub fn init(loop: *Loop) Self {
             return Self{

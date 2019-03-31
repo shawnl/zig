@@ -85,7 +85,7 @@ const Context = struct {
 const puts_per_thread = 500;
 const put_thread_count = 3;
 
-test "std.atomic.stack" {
+test "std.sync.stack" {
     var direct_allocator = std.heap.DirectAllocator.init();
     defer direct_allocator.deinit();
 

@@ -8,8 +8,10 @@ const mem = std.mem;
 const posix = os.posix;
 const windows = os.windows;
 const Loop = event.Loop;
+const Queue = std.sync.Queue;
+const Int = std.sync.Int;
 
-pub const RequestNode = std.atomic.Queue(Request).Node;
+pub const RequestNode = Queue(Request).Node;
 
 pub const Request = struct {
     msg: Msg,
@@ -741,8 +743,8 @@ pub fn Watch(comptime V: type) type {
         const WindowsOsData = struct {
             table_lock: event.Lock,
             dir_table: DirTable,
-            all_putters: std.atomic.Queue(promise),
-            ref_count: std.atomic.Int(usize),
+            all_putters: Queue(promise),
+            ref_count: Int(usize),
 
             const DirTable = std.AutoHashMap([]const u8, *Dir);
             const FileTable = std.AutoHashMap([]const u16, V);
@@ -803,8 +805,8 @@ pub fn Watch(comptime V: type) type {
                         .os_data = OsData{
                             .table_lock = event.Lock.init(loop),
                             .dir_table = OsData.DirTable.init(loop.allocator),
-                            .ref_count = std.atomic.Int(usize).init(1),
-                            .all_putters = std.atomic.Queue(promise).init(),
+                            .ref_count = Int(usize).init(1),
+                            .all_putters = Queue(promise).init(),
                         },
                     };
                     return self;
@@ -1109,7 +1111,7 @@ pub fn Watch(comptime V: type) type {
 
             defer os.close(dir_handle);
 
-            var putter_node = std.atomic.Queue(promise).Node{
+            var putter_node = Queue(promise).Node{
                 .data = @handle(),
                 .prev = null,
                 .next = null,

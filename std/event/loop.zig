@@ -10,10 +10,12 @@ const os = std.os;
 const posix = os.posix;
 const windows = os.windows;
 const maxInt = std.math.maxInt;
+const Stack = std.sync.Stack;
+const Queue = std.sync.Queue;
 
 pub const Loop = struct {
     allocator: *mem.Allocator,
-    next_tick_queue: std.atomic.Queue(promise),
+    next_tick_queue: Queue(promise),
     os_data: OsData,
     final_resume_node: ResumeNode,
     pending_event_count: usize,
@@ -21,10 +23,10 @@ pub const Loop = struct {
 
     // pre-allocated eventfds. all permanently active.
     // this is how we send promises to be resumed on other threads.
-    available_eventfd_resume_nodes: std.atomic.Stack(ResumeNode.EventFd),
-    eventfd_resume_nodes: []std.atomic.Stack(ResumeNode.EventFd).Node,
+    available_eventfd_resume_nodes: Stack(ResumeNode.EventFd),
+    eventfd_resume_nodes: []Stack(ResumeNode.EventFd).Node,
 
-    pub const NextTickNode = std.atomic.Queue(promise).Node;
+    pub const NextTickNode = Queue(promise).Node;
 
     pub const ResumeNode = struct {
         id: Id,
@@ -110,9 +112,9 @@ pub const Loop = struct {
             .pending_event_count = 1,
             .allocator = allocator,
             .os_data = undefined,
-            .next_tick_queue = std.atomic.Queue(promise).init(),
+            .next_tick_queue = Queue(promise).init(),
             .extra_threads = undefined,
-            .available_eventfd_resume_nodes = std.atomic.Stack(ResumeNode.EventFd).init(),
+            .available_eventfd_resume_nodes = Stack(ResumeNode.EventFd).init(),
             .eventfd_resume_nodes = undefined,
             .final_resume_node = ResumeNode{
                 .id = ResumeNode.Id.Stop,
@@ -122,7 +124,7 @@ pub const Loop = struct {
         };
         const extra_thread_count = thread_count - 1;
         self.eventfd_resume_nodes = try self.allocator.alloc(
-            std.atomic.Stack(ResumeNode.EventFd).Node,
+            Stack(ResumeNode.EventFd).Node,
             extra_thread_count,
         );
         errdefer self.allocator.free(self.eventfd_resume_nodes);
@@ -148,7 +150,7 @@ pub const Loop = struct {
     fn initOsData(self: *Loop, extra_thread_count: usize) InitOsDataError!void {
         switch (builtin.os) {
             builtin.Os.linux => {
-                self.os_data.fs_queue = std.atomic.Queue(fs.Request).init();
+                self.os_data.fs_queue = Queue(fs.Request).init();
                 self.os_data.fs_queue_item = 0;
                 // we need another thread for the file system because Linux does not have an async
                 // file system I/O API.
@@ -165,7 +167,7 @@ pub const Loop = struct {
                     while (self.available_eventfd_resume_nodes.pop()) |node| os.close(node.data.eventfd);
                 }
                 for (self.eventfd_resume_nodes) |*eventfd_node| {
-                    eventfd_node.* = std.atomic.Stack(ResumeNode.EventFd).Node{
+                    eventfd_node.* = Stack(ResumeNode.EventFd).Node{
                         .data = ResumeNode.EventFd{
                             .base = ResumeNode{
                                 .id = ResumeNode.Id.EventFd,
@@ -228,7 +230,7 @@ pub const Loop = struct {
                 self.os_data.fs_kqfd = try os.bsdKQueue();
                 errdefer os.close(self.os_data.fs_kqfd);
 
-                self.os_data.fs_queue = std.atomic.Queue(fs.Request).init();
+                self.os_data.fs_queue = Queue(fs.Request).init();
                 // we need another thread for the file system because Darwin does not have an async
                 // file system I/O API.
                 self.os_data.fs_end_request = fs.RequestNode{
@@ -243,7 +245,7 @@ pub const Loop = struct {
                 const empty_kevs = ([*]posix.Kevent)(undefined)[0..0];
 
                 for (self.eventfd_resume_nodes) |*eventfd_node, i| {
-                    eventfd_node.* = std.atomic.Stack(ResumeNode.EventFd).Node{
+                    eventfd_node.* = Stack(ResumeNode.EventFd).Node{
                         .data = ResumeNode.EventFd{
                             .base = ResumeNode{
                                 .id = ResumeNode.Id.EventFd,
@@ -335,7 +337,7 @@ pub const Loop = struct {
                 errdefer os.close(self.os_data.io_port);
 
                 for (self.eventfd_resume_nodes) |*eventfd_node, i| {
-                    eventfd_node.* = std.atomic.Stack(ResumeNode.EventFd).Node{
+                    eventfd_node.* = Stack(ResumeNode.EventFd).Node{
                         .data = ResumeNode.EventFd{
                             .base = ResumeNode{
                                 .id = ResumeNode.Id.EventFd,
@@ -677,7 +679,7 @@ pub const Loop = struct {
                             ResumeNode.Id.EventFd => {
                                 const event_fd_node = @fieldParentPtr(ResumeNode.EventFd, "base", resume_node);
                                 event_fd_node.epoll_op = posix.EPOLL_CTL_MOD;
-                                const stack_node = @fieldParentPtr(std.atomic.Stack(ResumeNode.EventFd).Node, "data", event_fd_node);
+                                const stack_node = @fieldParentPtr(Stack(ResumeNode.EventFd).Node, "data", event_fd_node);
                                 self.available_eventfd_resume_nodes.push(stack_node);
                             },
                         }
@@ -703,7 +705,7 @@ pub const Loop = struct {
                             ResumeNode.Id.Stop => return,
                             ResumeNode.Id.EventFd => {
                                 const event_fd_node = @fieldParentPtr(ResumeNode.EventFd, "base", resume_node);
-                                const stack_node = @fieldParentPtr(std.atomic.Stack(ResumeNode.EventFd).Node, "data", event_fd_node);
+                                const stack_node = @fieldParentPtr(Stack(ResumeNode.EventFd).Node, "data", event_fd_node);
                                 self.available_eventfd_resume_nodes.push(stack_node);
                             },
                         }
@@ -734,7 +736,7 @@ pub const Loop = struct {
                         ResumeNode.Id.Stop => return,
                         ResumeNode.Id.EventFd => {
                             const event_fd_node = @fieldParentPtr(ResumeNode.EventFd, "base", resume_node);
-                            const stack_node = @fieldParentPtr(std.atomic.Stack(ResumeNode.EventFd).Node, "data", event_fd_node);
+                            const stack_node = @fieldParentPtr(Stack(ResumeNode.EventFd).Node, "data", event_fd_node);
                             self.available_eventfd_resume_nodes.push(stack_node);
                         },
                     }
@@ -847,7 +849,7 @@ pub const Loop = struct {
         fs_kevent_wait: posix.Kevent,
         fs_thread: *os.Thread,
         fs_kqfd: i32,
-        fs_queue: std.atomic.Queue(fs.Request),
+        fs_queue: Queue(fs.Request),
         fs_end_request: fs.RequestNode,
     };
 
@@ -857,7 +859,7 @@ pub const Loop = struct {
         final_eventfd_event: os.linux.epoll_event,
         fs_thread: *os.Thread,
         fs_queue_item: i32,
-        fs_queue: std.atomic.Queue(fs.Request),
+        fs_queue: Queue(fs.Request),
         fs_end_request: fs.RequestNode,
     };
 };

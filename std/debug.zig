@@ -8,6 +8,7 @@ const DW = std.dwarf;
 const macho = std.macho;
 const coff = std.coff;
 const pdb = std.pdb;
+const sync = std.sync;
 const windows = os.windows;
 const ArrayList = std.ArrayList;
 const builtin = @import("builtin");
@@ -38,7 +39,7 @@ var stderr_file: os.File = undefined;
 var stderr_file_out_stream: os.File.OutStream = undefined;
 
 var stderr_stream: ?*io.OutStream(os.File.WriteError) = null;
-var stderr_mutex = std.Mutex.init();
+var stderr_mutex = sync.Mutex.init();
 pub fn warn(comptime fmt: []const u8, args: ...) void {
     const held = stderr_mutex.acquire();
     defer held.release();

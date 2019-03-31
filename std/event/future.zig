@@ -23,7 +23,7 @@ pub fn Future(comptime T: type) type {
         available: u8,
 
         const Self = @This();
-        const Queue = std.atomic.Queue(promise);
+        const Queue = std.sync.Queue(promise);
 
         pub fn init(loop: *Loop) Self {
             return Self{
