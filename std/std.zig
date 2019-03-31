@@ -8,13 +8,9 @@ pub const BufferOutStream = @import("io.zig").BufferOutStream;
 pub const DynLib = @import("dynamic_library.zig").DynLib;
 pub const HashMap = @import("hash_map.zig").HashMap;
 pub const LinkedList = @import("linked_list.zig").LinkedList;
-pub const Mutex = @import("mutex.zig").Mutex;
 pub const PriorityQueue = @import("priority_queue.zig").PriorityQueue;
-pub const StaticallyInitializedMutex = @import("statically_initialized_mutex.zig").StaticallyInitializedMutex;
 pub const SegmentedList = @import("segmented_list.zig").SegmentedList;
-pub const SpinLock = @import("spinlock.zig").SpinLock;
 
-pub const atomic = @import("atomic.zig");
 pub const base64 = @import("base64.zig");
 pub const build = @import("build.zig");
 pub const c = @import("c.zig");
@@ -42,6 +38,7 @@ pub const pdb = @import("pdb.zig");
 pub const rand = @import("rand.zig");
 pub const rb = @import("rb.zig");
 pub const sort = @import("sort.zig");
+pub const sync = @import("sync.zig");
 pub const ascii = @import("ascii.zig");
 pub const testing = @import("testing.zig");
 pub const unicode = @import("unicode.zig");
@@ -51,16 +48,13 @@ pub const zig = @import("zig.zig");
 test "std" {
     // run tests from these
     _ = @import("array_list.zig");
-    _ = @import("atomic.zig");
     _ = @import("buf_map.zig");
     _ = @import("buf_set.zig");
     _ = @import("buffer.zig");
     _ = @import("hash_map.zig");
     _ = @import("linked_list.zig");
-    _ = @import("mutex.zig");
-    _ = @import("statically_initialized_mutex.zig");
     _ = @import("segmented_list.zig");
-    _ = @import("spinlock.zig");
+    _ = @import("sync.zig");
 
     _ = @import("ascii.zig");
     _ = @import("base64.zig");

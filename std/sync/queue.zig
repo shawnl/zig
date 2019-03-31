@@ -4,6 +4,7 @@ const AtomicOrder = builtin.AtomicOrder;
 const AtomicRmwOp = builtin.AtomicRmwOp;
 const assert = std.debug.assert;
 const expect = std.testing.expect;
+const sync = std.sync;
 
 /// Many producer, many consumer, non-allocating, thread-safe.
 /// Uses a mutex to protect access.
@@ -11,7 +12,7 @@ pub fn Queue(comptime T: type) type {
     return struct {
         head: ?*Node,
         tail: ?*Node,
-        mutex: std.Mutex,
+        mutex: sync.Mutex,
 
         pub const Self = @This();
         pub const Node = std.LinkedList(T).Node;
@@ -20,7 +21,7 @@ pub fn Queue(comptime T: type) type {
             return Self{
                 .head = null,
                 .tail = null,
-                .mutex = std.Mutex.init(),
+                .mutex = sync.Mutex.init(),
             };
         }
 
@@ -151,7 +152,7 @@ const Context = struct {
 const puts_per_thread = 500;
 const put_thread_count = 3;
 
-test "std.atomic.Queue" {
+test "std.sync.Queue" {
     var direct_allocator = std.heap.DirectAllocator.init();
     defer direct_allocator.deinit();
 
@@ -248,7 +249,7 @@ fn startGets(ctx: *Context) u8 {
     }
 }
 
-test "std.atomic.Queue single-threaded" {
+test "std.sync.Queue single-threaded" {
     var queue = Queue(i32).init();
 
     var node_0 = Queue(i32).Node{
@@ -300,7 +301,7 @@ test "std.atomic.Queue single-threaded" {
     expect(queue.get() == null);
 }
 
-test "std.atomic.Queue dump" {
+test "std.sync.Queue dump" {
     const mem = std.mem;
     const SliceOutStream = std.io.SliceOutStream;
     var buffer: [1024]u8 = undefined;

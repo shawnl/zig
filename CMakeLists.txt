@@ -445,13 +445,12 @@ set(ZIG_CPP_SOURCES
     "${CMAKE_SOURCE_DIR}/src/windows_sdk.cpp"
 )
 
+# Run this in the std folder:
+# ruby -e 'puts `find`.split("\n").sort.reject{|i| !i.end_with? ".zig"}.reject{|i| i.end_with? "test.zig"}.reject{|i| i.ends_with? "bench.zig"}.map{|a| a.gsub(/\.\//, "")}.reduce(""){|memo, a| memo + "    " + "\"" + a + "\"" + "\n"}'
+# TODO ignore files not tracked by git in above script
 set(ZIG_STD_FILES
     "array_list.zig"
     "ascii.zig"
-    "atomic.zig"
-    "atomic/int.zig"
-    "atomic/queue.zig"
-    "atomic/stack.zig"
     "base64.zig"
     "buf_map.zig"
     "buf_set.zig"
@@ -584,7 +583,6 @@ set(ZIG_STD_FILES
     "mem.zig"
     "meta.zig"
     "meta/trait.zig"
-    "mutex.zig"
     "net.zig"
     "os.zig"
     "os/child_process.zig"
@@ -665,6 +663,7 @@ set(ZIG_STD_FILES
     "special/compiler_rt/floatuntisf.zig"
     "special/compiler_rt/floatuntitf.zig"
     "special/compiler_rt/modti3.zig"
+    "special/compiler_rt/muloti4.zig"
     "special/compiler_rt/mulXf3.zig"
     "special/compiler_rt/muloti4.zig"
     "special/compiler_rt/multi3.zig"
@@ -684,8 +683,14 @@ set(ZIG_STD_FILES
     "special/panic.zig"
     "special/test_runner.zig"
     "spinlock.zig"
-    "statically_initialized_mutex.zig"
     "std.zig"
+    "sync.zig"
+    "sync/circ.zig"
+    "sync/int.zig"
+    "sync/mutex.zig"
+    "sync/queue.zig"
+    "sync/stack.zig"
+    "sync/statically_initialized_mutex.zig"
     "testing.zig"
     "unicode.zig"
     "valgrind.zig"

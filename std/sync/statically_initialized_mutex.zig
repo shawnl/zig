@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("../std.zig");
 const builtin = @import("builtin");
 const AtomicOrder = builtin.AtomicOrder;
 const AtomicRmwOp = builtin.AtomicRmwOp;
@@ -9,12 +9,12 @@ const windows = std.os.windows;
 /// Lock may be held only once. If the same thread
 /// tries to acquire the same mutex twice, it deadlocks.
 /// This type is intended to be initialized statically. If you don't
-/// require static initialization, use std.Mutex.
+/// require static initialization, use std.sync.Mutex.
 /// On Windows, this mutex allocates resources when it is
 /// first used, and the resources cannot be freed.
-/// On Linux, this is an alias of std.Mutex.
+/// On Linux, this is an alias of std.sync.Mutex
 pub const StaticallyInitializedMutex = switch (builtin.os) {
-    builtin.Os.linux => std.Mutex,
+    builtin.Os.linux => std.sync.Mutex,
     builtin.Os.windows => struct {
         lock: windows.CRITICAL_SECTION,
         init_once: windows.RTL_RUN_ONCE,
@@ -44,7 +44,7 @@ pub const StaticallyInitializedMutex = switch (builtin.os) {
             return windows.TRUE;
         }
 
-        /// TODO: once https://github.com/ziglang/zig/issues/287 is solved and std.Mutex has a better
+        /// TODO: once https://github.com/ziglang/zig/issues/287 is solved and std.sync.Mutex has a better
         /// implementation of a runtime initialized mutex, remove this function.
         pub fn deinit(self: *StaticallyInitializedMutex) void {
             assert(windows.InitOnceExecuteOnce(&self.init_once, initCriticalSection, &self.lock, null) != 0);
@@ -57,7 +57,7 @@ pub const StaticallyInitializedMutex = switch (builtin.os) {
             return Held{ .mutex = self };
         }
     },
-    else => std.Mutex,
+    else => std.sync.Mutex,
 };
 
 test "std.StaticallyInitializedMutex" {

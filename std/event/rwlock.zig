@@ -28,7 +28,7 @@ pub const RwLock = struct {
         const ReadLock = 2;
     };
 
-    const Queue = std.atomic.Queue(promise);
+    const Queue = std.sync.Queue(promise);
 
     pub const HeldRead = struct {
         lock: *RwLock,
