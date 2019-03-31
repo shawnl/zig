@@ -1371,13 +1371,13 @@ fn testFmt(expected: []const u8, comptime template: []const u8, args: ...) !void
 
 pub fn trim(buf: []const u8) []const u8 {
     var start: usize = 0;
-    while (start < buf.len and isWhiteSpace(buf[start])) : (start += 1) {}
+    while (start < buf.len and ascii.isSpace(buf[start])) : (start += 1) {}
 
     var end: usize = buf.len;
     while (true) {
         if (end > start) {
             const new_end = end - 1;
-            if (isWhiteSpace(buf[new_end])) {
+            if (ascii.isSpace(buf[new_end])) {
                 end = new_end;
                 continue;
             }
@@ -1393,13 +1393,6 @@ test "fmt.trim" {
     testing.expect(mem.eql(u8, "", trim("")));
     testing.expect(mem.eql(u8, "abc", trim(" abc")));
     testing.expect(mem.eql(u8, "abc", trim("abc ")));
-}
-
-pub fn isWhiteSpace(byte: u8) bool {
-    return switch (byte) {
-        ' ', '\t', '\n', '\r' => true,
-        else => false,
-    };
 }
 
 pub fn hexToBytes(out: []u8, input: []const u8) !void {
