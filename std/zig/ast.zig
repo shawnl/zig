@@ -3,12 +3,13 @@ const assert = std.debug.assert;
 const testing = std.testing;
 const SegmentedList = std.SegmentedList;
 const mem = std.mem;
+const sync = std.sync;
 const Token = std.zig.Token;
 
 pub const TokenIndex = usize;
 
 pub const Tree = struct {
-    source: []const u8,
+    source: *sync.CircBuf,
     tokens: TokenList,
     root_node: *Node.Root,
     arena_allocator: std.heap.ArenaAllocator,
@@ -30,20 +31,20 @@ pub const Tree = struct {
     }
 
     pub fn tokenSlicePtr(self: *Tree, token: *const Token) []const u8 {
-        return self.source[token.start..token.end];
+        return self.source.circle[token.start..token.end];
     }
 
     pub fn getNodeSource(self: *const Tree, node: *const Node) []const u8 {
         const first_token = self.tokens.at(node.firstToken());
         const last_token = self.tokens.at(node.lastToken());
-        return self.source[first_token.start..last_token.end];
+        return self.source.circle[first_token.start..last_token.end];
     }
 
     pub const Location = struct {
         line: usize,
         column: usize,
-        line_start: usize,
-        line_end: usize,
+        line_start: isize,
+        line_len: isize,
     };
 
     /// Return the Location of the token relative to the offset specified by `start_index`.
@@ -51,7 +52,7 @@ pub const Tree = struct {
         var loc = Location{
             .line = 0,
             .column = 0,
-            .line_start = start_index,
+            .line_start = @atomicLoad(i32, &self.source.read, .SeqCst),
             .line_end = self.source.len,
         };
         const token_start = token.start;
