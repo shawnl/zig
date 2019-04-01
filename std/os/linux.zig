@@ -32,6 +32,10 @@ pub const FUTEX_PRIVATE_FLAG = 128;
 
 pub const FUTEX_CLOCK_REALTIME = 256;
 
+pub const FUTEX_WAITERS    = 0x80000000;
+pub const FUTEX_OWNER_DIED = 0x40000000;
+pub const FUTEX_TID_MASK   = 0x3fffffff;
+
 pub const PROT_NONE = 0;
 pub const PROT_READ = 1;
 pub const PROT_WRITE = 2;
@@ -1517,6 +1521,38 @@ pub fn capget(hdrp: *cap_user_header_t, datap: *cap_user_data_t) usize {
 pub fn capset(hdrp: *cap_user_header_t, datap: *const cap_user_data_t) usize {
     return syscall2(SYS_capset, @ptrToInt(hdrp), @ptrToInt(datap));
 }
+
+pub fn set_tid_address(addr: *i32) i32 {
+    return @bitCast(i32, @truncate(u32, syscall1(SYS_set_tid_address, @ptrToInt(addr))));
+}
+
+// See set_tid_address(2)
+pub var thread_list_lock: i32 = 0;
+
+pub extern fn thread_self() *Thread;
+
+// This is in every thread, pointed to by thread_self(), which is magical and
+// uses the TLS CPU register
+pub const Thread = extern struct {
+    self: *Thread,
+    tid: i32,
+};
+
+// This struct is a representation of the set_robust_list() ABI.
+// The prev pointer is actually not part of that ABI, but a doubly-linked list
+// is useful is managing the forward list that the kernel cares about.
+// Because of that the size can differ between 32-bit and 64-bit programs.
+//  lock: i32
+pub const robust_list_member = struct {
+    next: *robust_list_member, // <=== the pointers point here
+    prev: *robust_list_member,
+}
+
+pub const robust_list_head = struct {
+  head: *robust_list_member,
+  futex_offset: c_long, // Always -4 in zig programs
+  list_op_pending: ?*robust_list_member,
+};
 
 pub const inotify_event = extern struct {
     wd: i32,

@@ -2945,14 +2945,14 @@ pub const Thread = struct {
     };
 
     /// Returns the ID of the calling thread.
-    /// Makes a syscall every time the function is called.
     /// On Linux and POSIX, this Id is the same as a Handle.
     pub fn getCurrentId() Id {
         if (use_pthreads) {
             return c.pthread_self();
         } else
             return switch (builtin.os) {
-            builtin.Os.linux => linux.gettid(),
+            // Needs to be wired up for every arch, but avoids a syscall like c.pthread_self()
+            builtin.Os.linux => linux.thread_self().tid,
             builtin.Os.windows => windows.GetCurrentThreadId(),
             else => @compileError("Unsupported OS"),
         };

@@ -134,11 +134,17 @@ inline fn callMain() u8 {
     }
 }
 
-var tls_end_addr: usize = undefined;
 const main_thread_tls_align = 32;
-var main_thread_tls_bytes: [64]u8 align(main_thread_tls_align) = [1]u8{0} ** 64;
+const _main_thread_tls = extern struct {
+//align(main_thread_tls_align)
+    bytes: [64]u8,          // The TLS register points to the middle of these. This struct might
+    thread: std.os.linux.Thread,   // have to be flipped on certain arches, where TLS grows up, instead
+};                          // of down.
+var main_thread_tls: _main_thread_tls = undefined;
 
 fn linuxInitializeThreadLocalStorage(at_phdr: usize, at_phnum: usize, at_phent: usize) void {
+    // This address is stored in the TLS register
+    var tls_end_addr: usize = undefined;
     var phdr_addr = at_phdr;
     var n = at_phnum;
     var base: usize = 0;
@@ -154,30 +160,39 @@ fn linuxInitializeThreadLocalStorage(at_phdr: usize, at_phnum: usize, at_phent: 
             else => continue,
         }
     }
-    const tls_phdr = std.os.linux_tls_phdr orelse return;
-    std.os.linux_tls_img_src = @intToPtr([*]const u8, base + tls_phdr.p_vaddr);
-    assert(main_thread_tls_bytes.len >= tls_phdr.p_memsz); // not enough preallocated Thread Local Storage
-    assert(main_thread_tls_align >= tls_phdr.p_align); // preallocated Thread Local Storage not aligned enough
-    @memcpy(&main_thread_tls_bytes, std.os.linux_tls_img_src, tls_phdr.p_filesz);
-    tls_end_addr = @ptrToInt(&main_thread_tls_bytes) + tls_phdr.p_memsz;
-    linuxSetThreadArea(@ptrToInt(&tls_end_addr));
+    if (std.os.linux_tls_phdr) |tls_phdr| {
+        std.os.linux_tls_img_src = @intToPtr([*]const u8, base + tls_phdr.p_vaddr);
+        // TODO If the ELF says how big it is, why can't the linker help us size this?
+        if (!(main_thread_tls.bytes.len >= tls_phdr.p_memsz)) {
+            // not enough preallocated Thread Local Storage
+            @panic("TLS");
+        }
+        assert(main_thread_tls_align >= tls_phdr.p_align); // preallocated Thread Local Storage not aligned enough
+        @memcpy(@ptrCast([*]u8, &main_thread_tls.bytes[64 - tls_phdr.p_memsz]), std.os.linux_tls_img_src, tls_phdr.p_filesz);
+    }
+    tls_end_addr = @ptrToInt(&main_thread_tls.thread);
+    linuxSetThreadArea(tls_end_addr);
+    main_thread_tls.thread.self = &main_thread_tls.thread;
+    main_thread_tls.thread.tid = std.os.linux.set_tid_address(&std.os.linux.thread_list_lock);
 }
 
 fn linuxSetThreadArea(addr: usize) void {
     switch (builtin.arch) {
-        builtin.Arch.x86_64 => {
-            const ARCH_SET_FS = 0x1002;
-            const rc = std.os.linux.syscall2(std.os.linux.SYS_arch_prctl, ARCH_SET_FS, addr);
-            // acrh_prctl is documented to never fail
-            assert(rc == 0);
-        },
-        builtin.Arch.aarch64 => {
-            asm volatile (
-                \\        msr tpidr_el0,x0
-                \\        mov w0,#0
-                \\        ret
-            );
-        },
-        else => @compileError("Unsupported architecture"),
+    builtin.Arch.x86_64 => {
+        // TODO These is an instruction (WRFSBASE) to do this in user-mode
+        // on newer CPUs. Requires a generalized CPUID library.
+        const ARCH_SET_FS = 0x1002;
+        const rc = std.os.linux.syscall2(std.os.linux.SYS_arch_prctl, ARCH_SET_FS, addr);
+        // acrh_prctl is documented to never fail
+        assert(rc == 0);
+    },
+    builtin.Arch.aarch64 => {
+        asm volatile (
+            \\        msr tpidr_el0,x0
+            \\        mov w0,#0
+            \\        ret
+        );
+    },
+    else => @compileError("Unsupported architecture"),
     }
 }

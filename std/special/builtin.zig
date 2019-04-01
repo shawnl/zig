@@ -64,6 +64,7 @@ comptime {
     }
     if (builtin.os == builtin.Os.linux) {
         @export("clone", clone, builtin.GlobalLinkage.Strong);
+        @export("thread_self", thread_self, builtin.GlobalLinkage.Strong);
     }
 }
 extern fn __stack_chk_fail() noreturn {
@@ -131,6 +132,22 @@ nakedcc fn clone() void {
         );
     } else {
         @compileError("Implement clone() for this arch.");
+    }
+}
+
+nakedcc fn thread_self() void {
+    if (builtin.arch == builtin.Arch.x86_64) {
+        asm volatile (
+            \\      movq %%fs:0,%%rax
+            \\      ret
+        );
+    } else if (builtin.arch == builtin.Arch.aarch64) {
+        //asm volatile (
+        //    \\      mrs %0,tpidr_el0
+        //    \\      ret
+        //);
+    } else {
+        @compileError("Implement thread_self() for this arch.");
     }
 }
 
