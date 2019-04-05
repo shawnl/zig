@@ -8,6 +8,7 @@ pub const BufferOutStream = @import("io.zig").BufferOutStream;
 pub const DynLib = @import("dynamic_library.zig").DynLib;
 pub const HashMap = @import("hash_map.zig").HashMap;
 pub const LinkedList = @import("linked_list.zig").LinkedList;
+pub const List = @import("linked_list2.zig").List;
 pub const PriorityQueue = @import("priority_queue.zig").PriorityQueue;
 pub const SegmentedList = @import("segmented_list.zig").SegmentedList;
 
