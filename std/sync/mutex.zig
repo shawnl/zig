@@ -54,7 +54,7 @@ else switch (builtin.os) {
             pub fn release(self: Held) void {
                 const c = @atomicRmw(i32, &self.mutex.lock, .Sub, 1, .Release);
                 if (c != 1) {
-                    _ = @atomicRmw(i32, &self.mutex.lock, .Xchg, 0, .Release);
+                    _ = @atomicRmw(i32, &self.mutex.lock, .Xchg, 0, .Monotonic);
                     const rc = linux.futex_wake(&self.mutex.lock, linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG, 1);
                     switch (linux.getErrno(rc)) {
                         0 => {},
