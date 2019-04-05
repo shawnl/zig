@@ -6,13 +6,18 @@ const assert = std.debug.assert;
 const expect = std.testing.expect;
 const windows = std.os.windows;
 
-/// Lock may be held only once. If the same thread
-/// tries to acquire the same mutex twice, it deadlocks.
+/// According to the documentation this is a recursive mutex:
+/// https://docs.microsoft.com/en-us/windows/desktop/api/synchapi/nf-synchapi-entercriticalsection
 /// This type is intended to be initialized statically. If you don't
 /// require static initialization, use std.sync.Mutex.
 /// On Windows, this mutex allocates resources when it is
 /// first used, and the resources cannot be freed.
 /// On Linux, this is an alias of std.sync.Mutex
+pub const RecursiveStaticallyInitializedMutex = switch (builtin.os) {
+    builtin.Os.windows => StaticallyInitializedMutex,
+    else => std.sync.RecursiveMutex,
+};
+
 pub const StaticallyInitializedMutex = switch (builtin.os) {
     builtin.Os.linux => std.sync.Mutex,
     builtin.Os.windows => struct {

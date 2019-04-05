@@ -3,7 +3,7 @@ pub const StaticallyInitializedMutex = @import("sync/statically_initialized_mute
 pub const Stack = @import("sync/stack.zig").Stack;
 pub const Queue = @import("sync/queue.zig").Queue;
 pub const Int = @import("sync/int.zig").Int;
-pub const Spinlock = @import("sync/spinlock.zig").Spinlock;
+pub const SpinLock = @import("sync/spinlock.zig").SpinLock;
 
 test "std.sync" {
     _ = @import("sync/mutex.zig");
