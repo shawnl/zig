@@ -7,7 +7,10 @@
 
 #include "tokenizer.hpp"
 #include "util.hpp"
-#include "utf8-lookup.h"
+
+#include "utf8/utf8-lookup.h"
+#include "utf8/utf8.h"
+#include "utf8/iszig.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
@@ -243,6 +246,7 @@ struct Tokenize {
     size_t xdigits_seen;
     bool unicode;
     uint32_t char_code;
+    uint32_t utf8_validator_state; // http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
     int exponent_in_bin_or_dec;
     BigInt specified_exponent;
     BigInt significand;
@@ -405,47 +409,24 @@ void tokenize(Buf *buf, Tokenization *out) {
     t.tokens = out->tokens = allocate<ZigList<Token>>(1);
     t.buf = buf;
 
+    for (size_t i=0;i<buf_len(t.buf);i++)
+        if (!is_zig(buf_ptr(t.buf)[i])) {
+            t.pos = i;
+            unsigned char c = buf_ptr(t.buf)[i];
+            invalid_char_error(&t, c);
+        }
+
+    // TODO: byte at which error occured. https://github.com/cyb70289/utf8/issues/3
+    if (!utf8_range2((const unsigned char*)buf_ptr(t.buf), buf_len(t.buf))) {
+        t.pos = 0;
+        tokenize_error(&t, "Invalid UTF-8 in source file");
+    }
+
     out->line_offsets = allocate<ZigList<size_t>>(1);
 
     out->line_offsets->append(0);
-    // This also jumps forward when a char literal is read
-    unsigned remaining_bytes_in_cur_char = 0;
     for (t.pos = 0; t.pos < buf_len(t.buf); t.pos += 1) {
         uint8_t c = buf_ptr(t.buf)[t.pos];
-        uint32_t cp;
-        // Reject non-ASCII, except for valid UTF-8 inside strings and comments, and utf-8 character literals
-        // Note that this peaks ahead.
-        //
-        // In the zig version of the compiler we should look at these to build something streaming and fast:
-        // https://github.com/cyb70289/utf8/
-        // https://lemire.me/blog/2018/10/19/validating-utf-8-bytes-using-only-0-45-cycles-per-byte-avx-edition/
-        if (c & 0x80 && t.state != TokenizeStateError) {
-            if (remaining_bytes_in_cur_char > 0) {
-                remaining_bytes_in_cur_char--;
-            } else if (t.state == TokenizeStateLineComment ||
-                       t.state == TokenizeStateLineString ||
-                       t.state == TokenizeStateString ||
-                       t.state == TokenizeStateCharLiteral) {
-                uint32_t state = 0;
-                unsigned i;
-                remaining_bytes_in_cur_char = utf8_skip_data[c];
-                if (buf_len(t.buf) < (t.pos + remaining_bytes_in_cur_char - 1))
-                    tokenize_error(&t, "invalid UTF-8");
-                // this is a full validator implementing finite-state-automata
-                // https://bjoern.hoehrmann.de/utf-8/decoder/dfa/
-                cp = 0;
-                for (i = 0;i < remaining_bytes_in_cur_char; i++)
-                    utf8_decode(&state, &cp, (uint8_t)buf_ptr(t.buf)[t.pos + i]);
-                if (state != UTF8_ACCEPT)
-                    tokenize_error(&t, "invalid UTF-8");
-                remaining_bytes_in_cur_char--;
-                if (t.state == TokenizeStateCharLiteral) {
-                    t.pos += remaining_bytes_in_cur_char;
-                    remaining_bytes_in_cur_char = 0;
-                }
-            } else
-                invalid_char_error(&t, c);
-        }
         switch (t.state) {
             case TokenizeStateError:
                 break;
@@ -1194,13 +1175,17 @@ void tokenize(Buf *buf, Tokenization *out) {
                     case '\n':
                         tokenize_error(&t, "newline not allowed in character literal");
                     default:
-                        if (c < 128)
+                        if (c < 128) {
                             t.cur_tok->data.char_lit.c = c;
-                        else {
-                            // the utf8 parser/validator skipped forward for us and provided us this
-                            t.cur_tok->data.char_lit.c = cp;
+                            t.state = TokenizeStateCharLiteralEnd;
+                        } else {
+                            // http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+                            // Returns 0 when character complete. We already know the file is valid UTF8.
+                            if (!utf8_decode(&t.utf8_validator_state, &t.char_code, c)) {
+                                t.cur_tok->data.char_lit.c = t.char_code;
+                                t.state = TokenizeStateCharLiteralEnd;
+                            }
                         }
-                        t.state = TokenizeStateCharLiteralEnd;
                         break;
                 }
                 break;
