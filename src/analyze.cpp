@@ -5262,7 +5262,10 @@ bool const_values_equal(CodeGen *g, ConstExprValue *a, ConstExprValue *b) {
                 return const_values_equal(g, a->data.x_optional, b->data.x_optional);
             }
         case ZigTypeIdErrorUnion:
-            zig_panic("TODO");
+            return const_values_equal(g, a->data.x_err_union.error_set, b->data.x_err_union.error_set) &&
+                   ((!a->data.x_err_union.payload && !b->data.x_err_union.payload) ||
+                    ((a->data.x_err_union.payload && b->data.x_err_union.payload) &&
+                     const_values_equal(g, a->data.x_err_union.payload, b->data.x_err_union.payload)));
         case ZigTypeIdArgTuple:
             return a->data.x_arg_tuple.start_index == b->data.x_arg_tuple.start_index &&
                    a->data.x_arg_tuple.end_index == b->data.x_arg_tuple.end_index;
