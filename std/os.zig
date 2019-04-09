@@ -1087,12 +1087,24 @@ pub fn copyFile(source_path: []const u8, dest_path: []const u8) !void {
     var atomic_file = try AtomicFile.init(dest_path, mode);
     defer atomic_file.deinit();
 
-    var buf: [page_size]u8 = undefined;
-    while (true) {
-        const amt = try in_file.readFull(buf[0..]);
-        try atomic_file.file.write(buf[0..amt]);
-        if (amt != buf.len) {
-            return atomic_file.finish();
+    if (builtin.Os == .linux) {
+        // TODO no std way to get file size.
+        var st: linux.Stat = undefined;
+        var ret = posix.getErrno(linux.fstat(in_file.FileHandle, &st));
+        switch (ret) {
+        linux.ENOMEM => return error.OutOfMemory,
+        0 => {},
+        else => unreachable,
+        }
+        linux.copy_file_range(in_file.FileHandle, 0, out_file.FileHandle, 0, st.size);
+    } else {
+        var buf: [page_size]u8 = undefined;
+        while (true) {
+            const amt = try in_file.readFull(buf[0..]);
+            try atomic_file.file.write(buf[0..amt]);
+            if (amt != buf.len) {
+                return atomic_file.finish();
+            }
         }
     }
 }
@@ -1107,12 +1119,24 @@ pub fn copyFileMode(source_path: []const u8, dest_path: []const u8, mode: File.M
     var atomic_file = try AtomicFile.init(dest_path, mode);
     defer atomic_file.deinit();
 
-    var buf: [page_size]u8 = undefined;
-    while (true) {
-        const amt = try in_file.read(buf[0..]);
-        try atomic_file.file.write(buf[0..amt]);
-        if (amt != buf.len) {
-            return atomic_file.finish();
+    if (builtin.Os == .linux) {
+        // TODO no std way to get file size.
+        var st: linux.Stat = undefined;
+        var ret = posix.getErrno(linux.fstat(in_file.FileHandle, &st));
+        switch (ret) {
+        linux.ENOMEM => return error.OutOfMemory,
+        0 => {},
+        else => unreachable,
+        }
+        linux.copy_file_range(in_file.FileHandle, 0, out_file.FileHandle, 0, st.size);
+    } else {
+        var buf: [page_size]u8 = undefined;
+        while (true) {
+            const amt = try in_file.readFull(buf[0..]);
+            try atomic_file.file.write(buf[0..amt]);
+            if (amt != buf.len) {
+                return atomic_file.finish();
+            }
         }
     }
 }

@@ -818,6 +818,11 @@ pub fn read(fd: i32, buf: [*]u8, count: usize) usize {
     return syscall3(SYS_read, @bitCast(usize, isize(fd)), @ptrToInt(buf), count);
 }
 
+pub fn copy_file_range(fd_in: i32, off_in: isize, fd_out: i32, off_out: isize, len: usize) {
+    return syscall6(SYS_copy_file_range, @bitCast(usize, isize(fd)), @bitCast(usize, off_in), @bitCast(usize, isize(fd)),
+        @bitCast(usize, off_out), len, 0);
+}
+
 pub fn preadv(fd: i32, iov: [*]const iovec, count: usize, offset: u64) usize {
     return syscall4(SYS_preadv, @bitCast(usize, isize(fd)), @ptrToInt(iov), count, offset);
 }
