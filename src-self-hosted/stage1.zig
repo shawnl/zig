@@ -207,8 +207,9 @@ fn fmtMain(argc: c_int, argv: [*]const [*]const u8) !void {
         const source_code = try stdin.stream.readAllAlloc(allocator, self_hosted_main.max_src_size);
         defer allocator.free(source_code);
 
-        const tree = std.zig.parse(allocator, source_code) catch |err| {
-            try stderr.print("error parsing stdin: {}\n", err);
+        var ret_err_loc: usize = undefined;
+        const tree = std.zig.parse(allocator, source_code, &ret_err_loc) catch |err| {
+            try stderr.print("error parsing stdin at character {}: {}\n", ret_err_loc, err);
             process.exit(1);
         };
         defer tree.deinit();
@@ -302,8 +303,9 @@ fn fmtPath(fmt: *Fmt, file_path_ref: []const u8, check_mode: bool) FmtError!void
     };
     defer fmt.allocator.free(source_code);
 
-    const tree = std.zig.parse(fmt.allocator, source_code) catch |err| {
-        try stderr.print("error parsing file '{}': {}\n", file_path, err);
+    var ret_err_loc: usize = undefined;
+    const tree = std.zig.parse(fmt.allocator, source_code, &ret_err_loc) catch |err| {
+        try stderr.print("error parsing file '{}' at character {}: {}\n", file_path, ret_err_loc, err);
         fmt.any_error = true;
         return;
     };

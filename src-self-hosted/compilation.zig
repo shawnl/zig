@@ -841,7 +841,8 @@ pub const Compilation = struct {
             };
             errdefer self.gpa().free(source_code);
 
-            const tree = try std.zig.parse(self.gpa(), source_code);
+            var ret_err: usize = undefined;
+            const tree = try std.zig.parse(self.gpa(), source_code, &ret_err);
             errdefer {
                 tree.deinit();
             }

@@ -627,8 +627,9 @@ fn cmdFmt(allocator: *Allocator, args: []const []const u8) !void {
         const source_code = try stdin.stream.readAllAlloc(allocator, max_src_size);
         defer allocator.free(source_code);
 
-        const tree = std.zig.parse(allocator, source_code) catch |err| {
-            try stderr.print("error parsing stdin: {}\n", err);
+        var ret_err_loc: usize = undefined;
+        const tree = std.zig.parse(allocator, source_code, &ret_err_loc) catch |err| {
+            try stderr.print("error parsing stdin at character {}: {}\n", ret_err_loc, err);
             process.exit(1);
         };
         defer tree.deinit();

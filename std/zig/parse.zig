@@ -1,6 +1,9 @@
 const std = @import("../std.zig");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const mem = std.mem;
+const ascii = std.ascii;
+const unicode = std.unicode;
 const ast = std.zig.ast;
 const Node = ast.Node;
 const Tree = ast.Tree;
@@ -13,7 +16,7 @@ pub const Error = error{ParseError} || Allocator.Error;
 
 /// Result should be freed with tree.deinit() when there are
 /// no more references to any of the tokens or nodes.
-pub fn parse(allocator: *Allocator, source: []const u8) !*Tree {
+pub fn parse(allocator: *Allocator, source: []const u8, ret_err_off: ?*usize) !*Tree {
     const tree = blk: {
         // This block looks unnecessary, but is a "foot-shield" to prevent the SegmentedLists
         // from being initialized with a pointer to this `arena`, which is created on
@@ -33,6 +36,40 @@ pub fn parse(allocator: *Allocator, source: []const u8) !*Tree {
         break :blk tree;
     };
     errdefer tree.deinit();
+
+    // TODO Validate in one pass by streaming through these three tests to the tokenizer.
+    var prev2: u8 = ' ';
+    var prev: u8 = ' ';
+    for (source) |c, i| {
+        if (std.zig.isntZig(c)) {
+            if (ret_err_off) |err_off| err_off.* = i;
+            return error.InvalidCharacter;
+        }
+        // Ban certain Unicode characters
+        //
+        // All three of these are line-endings.
+        // U+0085 (NEL) C2 85
+        // U+2028 (LS)  E2 80 A8
+        // U+2029 (PS)  E2 80 A9
+        //
+        prev2 = prev;
+        prev = c;
+        switch (u16(prev2) << 8 | prev) {
+        0xc285 => { // Doesn't catch this character if it is the last character, but that is OK because it is the last line.
+            if (ret_err_off) |err_off| err_off.* = i - 2;
+            return error.InvalidCharacter;
+        },
+        0xe280 => {
+            if (c == 0xa8 or c == 0xa9) {
+                if (ret_err_off) |err_off| err_off.* = i - 2;
+                return error.InvalidCharacter;
+            }
+        },
+        else => {},
+        }
+    }
+    try unicode.utf8ValidateSliceWithLoc(source, ret_err_off);
+
     const arena = &tree.arena_allocator.allocator;
 
     tree.tokens = ast.Tree.TokenList.init(arena);

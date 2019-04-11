@@ -2258,7 +2258,7 @@ fn testParse(source: []const u8, allocator: *mem.Allocator, anything_changed: *b
     var stderr_file = try io.getStdErr();
     var stderr = &stderr_file.outStream().stream;
 
-    const tree = try std.zig.parse(allocator, source);
+    const tree = try std.zig.parse(allocator, source, null);
     defer tree.deinit();
 
     var error_it = tree.errors.iterator(0);
