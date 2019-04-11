@@ -960,6 +960,24 @@ pub const SplitIterator = struct {
     }
 };
 
+// Very simple iterator. This simplifies some code that needs error handling
+// regarding reading past the end of a slice.
+pub fn Iterator(comptime T: type, slice: []const T) type {
+    return struct {
+        const Self = @This();
+
+        buf: []const u8 = @sliceToBytes(slice),
+        i: usize = 0,
+        size: usize = @sizeOf(T),
+
+        pub fn next(self: *Iterator) ?u8 {
+            if (self.i >= self.buf.len) return null;
+            self.i += size;
+            return self.buf[self.i - size];
+        }
+    };
+}
+
 /// Naively combines a series of slices with a separator.
 /// Allocates memory for the result, which must be freed by the caller.
 pub fn join(allocator: *Allocator, separator: []const u8, slices: []const []const u8) ![]u8 {

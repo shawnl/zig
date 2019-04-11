@@ -72,8 +72,8 @@ pub fn utf8CodepointSequenceLength(c: u32) Utf8Error!u3 {
 /// If this byte does not match the form of a UTF-8 start byte, returns Utf8InvalidStartByte.
 pub fn utf8ByteSequenceLength(first_byte: u8) Utf8Error!u3 {
     const INVALID = 0;
-    const swtch = []u8{1, INVALID, 2, 3, 4, INVALID, INVALID, INVALID, INVALID};
-    var len = swtch[@clz(~first_byte)];
+    const swtch = [_]u8{1, INVALID, 2, 3, 4, INVALID, INVALID, INVALID, INVALID};
+    var len = swtch[@clz(u8, ~first_byte)];
     if (len == INVALID) {
         return error.Utf8InvalidStartByte;
     }
@@ -144,7 +144,7 @@ pub fn utf8Decode2(bytes: []const u8) Utf8Error!u32 {
     assert(bytes[0] & 0b11100000 == 0b11000000);
     var value: u32 = bytes[0] & 0b00011111;
 
-    if (@clz(~bytes[1]) != 1) return error.Utf8ShortChar;
+    if (@clz(u8, ~bytes[1]) != 1) return error.Utf8ShortChar;
     value <<= 6;
     value |= bytes[1] & 0b00111111;
 
@@ -158,11 +158,11 @@ pub fn utf8Decode3(bytes: []const u8) Utf8Error!u32 {
     assert(bytes[0] & 0b11110000 == 0b11100000);
     var value: u32 = bytes[0] & 0b00001111;
 
-    if (@clz(~bytes[1]) != 1) return error.Utf8ShortChar;
+    if (@clz(u8, ~bytes[1]) != 1) return error.Utf8ShortChar;
     value <<= 6;
     value |= bytes[1] & 0b00111111;
 
-    if (@clz(~bytes[2]) != 1) return error.Utf8ShortChar;
+    if (@clz(u8, ~bytes[2]) != 1) return error.Utf8ShortChar;
     value <<= 6;
     value |= bytes[2] & 0b00111111;
 
@@ -177,15 +177,15 @@ pub fn utf8Decode4(bytes: []const u8) Utf8Error!u32 {
     assert(bytes[0] & 0b11111000 == 0b11110000);
     var value: u32 = bytes[0] & 0b00000111;
 
-    if (@clz(~bytes[2]) != 1) return error.Utf8ShortChar;
+    if (@clz(u8, ~bytes[2]) != 1) return error.Utf8ShortChar;
     value <<= 6;
     value |= bytes[1] & 0b00111111;
 
-    if (@clz(~bytes[2]) != 1) return error.Utf8ShortChar;
+    if (@clz(u8, ~bytes[2]) != 1) return error.Utf8ShortChar;
     value <<= 6;
     value |= bytes[2] & 0b00111111;
 
-    if (@clz(~bytes[2]) != 1) return error.Utf8ShortChar;
+    if (@clz(u8, ~bytes[2]) != 1) return error.Utf8ShortChar;
     value <<= 6;
     value |= bytes[3] & 0b00111111;
 
