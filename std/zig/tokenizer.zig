@@ -1139,54 +1139,6 @@ pub const Tokenizer = struct {
         result.end = self.index;
         return result;
     }
-
-    fn checkLiteralCharacter(self: *Tokenizer) void {
-        if (self.pending_invalid_token != null) return;
-        const invalid_length = self.getInvalidCharacterLength();
-        if (invalid_length == 0) return;
-        self.pending_invalid_token = Token{
-            .id = Token.Id.Invalid,
-            .start = self.index,
-            .end = self.index + invalid_length,
-        };
-    }
-
-    fn getInvalidCharacterLength(self: *Tokenizer) u3 {
-        const c0 = self.buffer[self.index];
-        if (c0 < 0x80) {
-            if (c0 < 0x20 or c0 == 0x7f) {
-                // ascii control codes are never allowed
-                // (note that \n was checked before we got here)
-                return 1;
-            }
-            // looks fine to me.
-            return 0;
-        } else {
-            // check utf8-encoded character.
-            const length = std.unicode.utf8ByteSequenceLength(c0) catch return 1;
-            if (self.index + length > self.buffer.len) {
-                return @intCast(u3, self.buffer.len - self.index);
-            }
-            const bytes = self.buffer[self.index .. self.index + length];
-            switch (length) {
-                2 => {
-                    const value = std.unicode.utf8Decode2(bytes) catch return length;
-                    if (value == 0x85) return length; // U+0085 (NEL)
-                },
-                3 => {
-                    const value = std.unicode.utf8Decode3(bytes) catch return length;
-                    if (value == 0x2028) return length; // U+2028 (LS)
-                    if (value == 0x2029) return length; // U+2029 (PS)
-                },
-                4 => {
-                    _ = std.unicode.utf8Decode4(bytes) catch return length;
-                },
-                else => unreachable,
-            }
-            self.index += length - 1;
-            return 0;
-        }
-    }
 };
 
 test "tokenizer" {
@@ -1241,83 +1193,9 @@ test "tokenizer - invalid token characters" {
     testTokenize("''", [_]Token.Id{ Token.Id.Invalid, Token.Id.Invalid });
 }
 
-test "tokenizer - invalid literal/comment characters" {
-    testTokenize("\"\x00\"", [_]Token.Id{
-        Token.Id.StringLiteral,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\x00", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\x1f", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\x7f", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-}
-
 test "tokenizer - utf8" {
     testTokenize("//\xc2\x80", [_]Token.Id{Token.Id.LineComment});
     testTokenize("//\xf4\x8f\xbf\xbf", [_]Token.Id{Token.Id.LineComment});
-}
-
-test "tokenizer - invalid utf8" {
-    testTokenize("//\x80", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xbf", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xf8", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xff", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xc2\xc0", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xe0", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xf0", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xf0\x90\x80\xc0", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-}
-
-test "tokenizer - illegal unicode codepoints" {
-    // unicode newline characters.U+0085, U+2028, U+2029
-    testTokenize("//\xc2\x84", [_]Token.Id{Token.Id.LineComment});
-    testTokenize("//\xc2\x85", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xc2\x86", [_]Token.Id{Token.Id.LineComment});
-    testTokenize("//\xe2\x80\xa7", [_]Token.Id{Token.Id.LineComment});
-    testTokenize("//\xe2\x80\xa8", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xe2\x80\xa9", [_]Token.Id{
-        Token.Id.LineComment,
-        Token.Id.Invalid,
-    });
-    testTokenize("//\xe2\x80\xaa", [_]Token.Id{Token.Id.LineComment});
 }
 
 test "tokenizer - string identifier and builtin fns" {
