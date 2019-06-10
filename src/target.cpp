@@ -1217,6 +1217,8 @@ const char *arch_stack_pointer_register_name(ZigLLVM_ArchType arch) {
             return "rsp";
         case ZigLLVM_aarch64:
             return "sp";
+        case ZigLLVM_ppc64le:
+            return "r1";
 
         case ZigLLVM_arm:
         case ZigLLVM_thumb:
@@ -1243,7 +1245,6 @@ const char *arch_stack_pointer_register_name(ZigLLVM_ArchType arch) {
         case ZigLLVM_msp430:
         case ZigLLVM_nvptx:
         case ZigLLVM_nvptx64:
-        case ZigLLVM_ppc64le:
         case ZigLLVM_r600:
         case ZigLLVM_renderscript32:
         case ZigLLVM_renderscript64:

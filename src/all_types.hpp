@@ -2170,6 +2170,8 @@ enum IrInstructionId {
     IrInstructionIdStructFieldPtr,
     IrInstructionIdUnionFieldPtr,
     IrInstructionIdElemPtr,
+    IrInstructionIdInsert,
+    IrInstructionIdExtract,
     IrInstructionIdVarPtr,
     IrInstructionIdCall,
     IrInstructionIdConst,
@@ -2517,6 +2519,27 @@ struct IrInstructionElemPtr {
     IrInstruction *array_ptr;
     IrInstruction *elem_index;
     PtrLen ptr_len;
+    bool is_const;
+    bool safety_check_on;
+};
+
+struct IrInstructionExtract {
+    IrInstruction base;
+
+    // Variable-length vectors will require changes
+    IrInstruction *elems;
+    IrInstruction *elem_index;
+    bool is_const;
+    bool safety_check_on;
+};
+
+struct IrInstructionInsert {
+    IrInstruction base;
+
+    // Variable-length vectors will require changes
+    IrInstruction *elems;
+    IrInstruction *elem_index;
+    IrInstruction *insert;
     bool is_const;
     bool safety_check_on;
 };

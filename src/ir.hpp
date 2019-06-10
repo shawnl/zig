@@ -22,6 +22,7 @@ ZigType *ir_analyze(CodeGen *g, IrExecutable *old_executable, IrExecutable *new_
         ZigType *expected_type, AstNode *expected_type_source_node);
 
 bool ir_has_side_effects(IrInstruction *instruction);
+bool instr_is_comptime(IrInstruction *instruction);
 
 struct IrAnalyze;
 ConstExprValue *const_ptr_pointee(IrAnalyze *ira, CodeGen *codegen, ConstExprValue *const_val,

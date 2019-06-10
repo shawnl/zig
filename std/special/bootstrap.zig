@@ -50,6 +50,12 @@ nakedcc fn _start() noreturn {
                 : [argc] "=r" (-> [*]usize)
             );
         },
+        .powerpc64le => {
+            // We have to advance the stack frame here too..
+            argc_ptr = asm ("mr %[argc], 1; stdu   0, -32(1);"
+                : [argc] "=r" (-> [*]usize)
+            );
+        },
         else => @compileError("unsupported arch"),
     }
     // If LLVM inlines stack variables into _start, they will overwrite
@@ -67,14 +73,14 @@ extern fn WinMainCRTStartup() noreturn {
 
 // TODO https://github.com/ziglang/zig/issues/265
 fn posixCallMainAndExit() noreturn {
-    if (builtin.os == builtin.Os.freebsd) {
+    if (builtin.os == .freebsd) {
         @setAlignStack(16);
     }
     const argc = argc_ptr[0];
     const argv = @ptrCast([*][*]u8, argc_ptr + 1);
 
-    const envp_optional = @ptrCast([*]?[*]u8, argv + argc + 1);
     var envp_count: usize = 0;
+    const envp_optional = @ptrCast([*]?[*]u8, argv + argc + 1);
     while (envp_optional[envp_count]) |_| : (envp_count += 1) {}
     const envp = @ptrCast([*][*]u8, envp_optional)[0..envp_count];
 

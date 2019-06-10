@@ -15,6 +15,7 @@
 #include "softfloat.hpp"
 #include "translate_c.hpp"
 #include "util.hpp"
+#include "codegen.hpp"
 
 #include <errno.h>
 
@@ -341,7 +342,7 @@ static bool value_is_comptime(ConstExprValue *const_val) {
     return const_val->special != ConstValSpecialRuntime;
 }
 
-static bool instr_is_comptime(IrInstruction *instruction) {
+bool instr_is_comptime(IrInstruction *instruction) {
     return value_is_comptime(&instruction->value);
 }
 
@@ -469,6 +470,14 @@ static constexpr IrInstructionId ir_instruction_id(IrInstructionUnionFieldPtr *)
 
 static constexpr IrInstructionId ir_instruction_id(IrInstructionElemPtr *) {
     return IrInstructionIdElemPtr;
+}
+
+static constexpr IrInstructionId ir_instruction_id(IrInstructionExtract *) {
+    return IrInstructionIdExtract;
+}
+
+static constexpr IrInstructionId ir_instruction_id(IrInstructionInsert *) {
+    return IrInstructionIdInsert;
 }
 
 static constexpr IrInstructionId ir_instruction_id(IrInstructionVarPtr *) {
@@ -3964,6 +3973,34 @@ static IrInstruction *ir_gen_symbol(IrBuilder *irb, Scope *scope, AstNode *node,
     return ir_build_undeclared_identifier(irb, scope, node, variable_name);
 }
 
+static IrInstruction *ir_build_insert(IrBuilder *irb, Scope *scope, AstNode *source_node, IrInstruction *elems,
+        IrInstruction insert, IrInstruction *elem_index, bool safety_check_on) {
+    IrInstructionInsert *instruction = ir_build_instruction<IrInstructionInsert>(irb, scope, source_node);
+    instruction->insert = insert;
+    instruction->elems = elems;
+    instruction->elem_index = elem_index;
+    instruction->safety_check_on = safety_check_on;
+
+    ir_ref_instruction(insert, irb->current_basic_block);
+    ir_ref_instruction(elems, irb->current_basic_block);
+    ir_ref_instruction(elem_index, irb->current_basic_block);
+
+    return &instruction->base;
+}
+
+static IrInstruction *ir_build_extract(IrBuilder *irb, Scope *scope, AstNode *source_node, IrInstruction *elems,
+        IrInstruction *elem_index, bool safety_check_on) {
+    IrInstructionExtract *instruction = ir_build_instruction<IrInstructionExtract>(irb, scope, source_node);
+    instruction->elems = elems;
+    instruction->elem_index = elem_index;
+    instruction->safety_check_on = safety_check_on;
+
+    ir_ref_instruction(elems, irb->current_basic_block);
+    ir_ref_instruction(elem_index, irb->current_basic_block);
+
+    return &instruction->base;
+}
+
 static IrInstruction *ir_gen_array_access(IrBuilder *irb, Scope *scope, AstNode *node, LVal lval) {
     assert(node->type == NodeTypeArrayAccessExpr);
 
@@ -3976,6 +4013,43 @@ static IrInstruction *ir_gen_array_access(IrBuilder *irb, Scope *scope, AstNode 
     IrInstruction *subscript_instruction = ir_gen_node(irb, subscript_node, scope);
     if (subscript_instruction == irb->codegen->invalid_instruction)
         return subscript_instruction;
+
+    // Using Insert/Extract Element/Value allows us to keep things in registers
+    // across calls, and is necessary to work with vectors.
+    ZigType *array_type = ir_resolve_type(array_ref_instruction, array_ref_instruction->value.type);
+
+    // If both are comptime this will get get evaluated at comptime,
+    // and we do not have to worry around runtime limitations.
+    if (instr_is_comptime(array_ref_instruction) &&
+        instr_is_comptime(subscript_instruction)) {
+        ; // Below
+    } else if (array_type->id == ZigTypeIdVector ||
+        (array_type->id == ZigTypeIdPointer &&
+            array_type->data.pointer.ptr_len == PtrLenSingle &&
+            array_type->data.pointer.child_type->id == ZigTypeIdVector)) {
+        if (lval == LValPtr)
+            return ir_build_insert(irb, scope, node, array_ref_instruction,
+                subscript_instruction, true);
+        else
+            return ir_build_extract(irb, scope, node, array_ref_instruction,
+                subscript_instruction, true);
+    } else if (array_type->id == ZigTypeIdArray ||
+                array_type->id == ZigTypeIdStruct ||
+                array_type->id == ZigTypeIdUnion) {
+        if (instr_is_comptime(subscript_instruction)) {
+            if (lval == LValPtr)
+                return ir_build_insert(irb, scope, node, array_ref_instruction,
+                    subscript_instruction, true);
+            else
+                return ir_build_extract(irb, scope, node, array_ref_instruction,
+                    subscript_instruction, true);
+        } else {
+            assert(array_type->id == ZigTypeIdArray && "structs and unions do not support dynamic access");
+            array_ref_instruction = ir_build_ref(irb, scope, node, array_ref_instruction, true, false);
+            if (array_ref_instruction == irb->codegen->invalid_instruction)
+                return array_ref_instruction;
+        }
+    }
 
     IrInstruction *ptr_instruction = ir_build_elem_ptr(irb, scope, node, array_ref_instruction,
             subscript_instruction, true, PtrLenSingle);
@@ -15565,6 +15639,111 @@ static ZigType *adjust_ptr_len(CodeGen *g, ZigType *ptr_type, PtrLen ptr_len) {
             ptr_type->data.pointer.allow_zero);
 }
 
+static IrInstruction *ir_analyze_instruction_extract(IrAnalyze *ira, IrInstructionExtract *extract_instruction) {
+    ZigType *type = extract_instruction->base.value.type;
+
+    assert(!instr_is_comptime(extract_instruction->elems) && "extractvalue index must be comptime known");
+    assert(type == extract_instruction->elems->value.type && "extract types do not match");
+
+    if (type_is_invalid(type)) {
+        return ira->codegen->invalid_instruction;
+    } else if (type->id == ZigTypeIdVector ||
+        (type->id == ZigTypeIdPointer &&
+         type->data.pointer.ptr_len == PtrLenSingle &&
+         type->data.pointer.child_type->id == ZigTypeIdVector)) {
+        ; // OK
+    } else if (type->id == ZigTypeIdArray ||
+               type->id == ZigTypeIdStruct ||
+               type->id == ZigTypeIdUnion) {
+        if (!instr_is_comptime(extract_instruction->elem_index)) {
+            return ira->codegen->invalid_instruction;
+        }
+    } else {
+        zig_panic("unexpected type in extract instruction");
+    }
+
+    if (instr_is_comptime(extract_instruction->elem_index)) {
+        IrInstruction *count_value = extract_instruction->elems;
+        ZigType *type = count_value->value.type;
+        size_t count = bigint_as_unsigned(&count_value->value.data.x_bigint);
+        if (type->id == ZigTypeIdVector) {
+            if (type->data.vector.len >= count) {
+                ir_add_error(ira, count_value, buf_sprintf("out of bounds vector access"));
+                return ira->codegen->invalid_instruction;
+            }
+        } else if (type->id == ZigTypeIdStruct) {
+            if (type->data.structure.src_field_count >= count) {
+                ir_add_error(ira, count_value, buf_sprintf("out of bounds struct access"));
+                return ira->codegen->invalid_instruction;
+            }
+        } else if (type->id == ZigTypeIdUnion) {
+            if (type->data.unionation.src_field_count >= count) {
+                ir_add_error(ira, count_value, buf_sprintf("out of bounds union access"));
+                return ira->codegen->invalid_instruction;
+            }
+        }
+    }
+
+    // This function does not change anything, just checks for problems.
+    return &extract_instruction->base;
+}
+
+static IrInstruction *ir_analyze_instruction_insert(IrAnalyze *ira, IrInstructionInsert *insert_instruction) {
+    ZigType *type = insert_instruction->base.value.type;
+    ZigType *scalar_type;
+
+    assert(!instr_is_comptime(insert_instruction->elems) && "insertvalue index must be comptime known");
+    assert(type == insert_instruction->elems->value.type && "insert types do not match");
+
+    if (type_is_invalid(type)) {
+        return ira->codegen->invalid_instruction;
+    } else if (type->id == ZigTypeIdVector) {
+        scalar_type = type->data.vector.elem_type; // OK
+    } else if (type->id == ZigTypeIdArray) {
+        if (!instr_is_comptime(insert_instruction->elem_index))
+            return ira->codegen->invalid_instruction;
+        scalar_type = type->data.array.child_type;
+    } else if (type->id == ZigTypeIdStruct) {
+        if (!instr_is_comptime(insert_instruction->elem_index))
+            return ira->codegen->invalid_instruction;
+        zig_panic("TODO implement struct with insert instruction");
+    } else if (type->id == ZigTypeIdUnion) {
+        zig_panic("TODO implement union with insert instruction");
+    } else {
+        zig_panic("unexpected type in insert instruction");
+    }
+
+    if (instr_is_comptime(insert_instruction->elem_index)) {
+        IrInstruction *count_value = insert_instruction->elems;
+        ZigType *type = count_value->value.type;
+        size_t count = bigint_as_unsigned(&count_value->value.data.x_bigint);
+        if (type->id == ZigTypeIdVector) {
+            if (type->data.vector.len >= count) {
+                ir_add_error(ira, count_value, buf_sprintf("out of bounds vector access"));
+                return ira->codegen->invalid_instruction;
+            }
+        } else if (type->id == ZigTypeIdStruct) {
+            if (type->data.structure.src_field_count >= count) {
+                ir_add_error(ira, count_value, buf_sprintf("out of bounds struct access"));
+                return ira->codegen->invalid_instruction;
+            }
+        } else if (type->id == ZigTypeIdUnion) {
+            if (type->data.unionation.src_field_count >= count) {
+                ir_add_error(ira, count_value, buf_sprintf("out of bounds union access"));
+                return ira->codegen->invalid_instruction;
+            }
+        }
+    }
+
+    IrInstruction *insert = ir_implicit_cast(ira, insert_instruction->insert, scalar_type);
+    if (insert == ira->codegen->invalid_instruction)
+        return insert;
+
+    insert_instruction->insert = insert;
+
+    return &insert_instruction->base;
+}
+
 static IrInstruction *ir_analyze_instruction_elem_ptr(IrAnalyze *ira, IrInstructionElemPtr *elem_ptr_instruction) {
     Error err;
     IrInstruction *array_ptr = elem_ptr_instruction->array_ptr->child;
@@ -23322,6 +23501,10 @@ static IrInstruction *ir_analyze_instruction_nocast(IrAnalyze *ira, IrInstructio
             return ir_analyze_instruction_store_ptr(ira, (IrInstructionStorePtr *)instruction);
         case IrInstructionIdElemPtr:
             return ir_analyze_instruction_elem_ptr(ira, (IrInstructionElemPtr *)instruction);
+        case IrInstructionIdExtract:
+            return ir_analyze_instruction_extract(ira, (IrInstructionExtract *)instruction);
+        case IrInstructionIdInsert:
+            return ir_analyze_instruction_insert(ira, (IrInstructionInsert *)instruction);
         case IrInstructionIdVarPtr:
             return ir_analyze_instruction_var_ptr(ira, (IrInstructionVarPtr *)instruction);
         case IrInstructionIdFieldPtr:
@@ -23730,6 +23913,8 @@ bool ir_has_side_effects(IrInstruction *instruction) {
         case IrInstructionIdUnionInit:
         case IrInstructionIdFieldPtr:
         case IrInstructionIdElemPtr:
+        case IrInstructionIdExtract:
+        case IrInstructionIdInsert:
         case IrInstructionIdVarPtr:
         case IrInstructionIdTypeOf:
         case IrInstructionIdToPtrType:

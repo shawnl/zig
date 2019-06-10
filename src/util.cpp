@@ -25,6 +25,7 @@ void zig_panic(const char *format, ...) {
 void assert(bool ok) {
     if (!ok) {
         const char *msg = "Assertion failed. This is a bug in the Zig compiler.";
+        abort();
         stage2_panic(msg, strlen(msg));
     }
 }

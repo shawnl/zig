@@ -327,6 +327,26 @@ static void ir_print_elem_ptr(IrPrint *irp, IrInstructionElemPtr *instruction) {
     }
 }
 
+static void ir_print_extract(IrPrint *irp, IrInstructionExtract *instruction) {
+    ir_print_other_instruction(irp, instruction->elems);
+    fprintf(irp->f, "[");
+    ir_print_other_instruction(irp, instruction->elem_index);
+    fprintf(irp->f, "]");
+    if (!instruction->safety_check_on) {
+        fprintf(irp->f, " // no safety");
+    }
+}
+
+static void ir_print_insert(IrPrint *irp, IrInstructionInsert *instruction) {
+    ir_print_other_instruction(irp, instruction->elems);
+    fprintf(irp->f, "[");
+    ir_print_other_instruction(irp, instruction->elem_index);
+    fprintf(irp->f, "]");
+    if (!instruction->safety_check_on) {
+        fprintf(irp->f, " // no safety");
+    }
+}
+
 static void ir_print_var_ptr(IrPrint *irp, IrInstructionVarPtr *instruction) {
     fprintf(irp->f, "&%s", buf_ptr(&instruction->var->name));
 }
@@ -1517,6 +1537,12 @@ static void ir_print_instruction(IrPrint *irp, IrInstruction *instruction) {
             break;
         case IrInstructionIdElemPtr:
             ir_print_elem_ptr(irp, (IrInstructionElemPtr *)instruction);
+            break;
+        case IrInstructionIdExtract:
+            ir_print_extract(irp, (IrInstructionExtract *)instruction);
+            break;
+        case IrInstructionIdInsert:
+            ir_print_insert(irp, (IrInstructionInsert *)instruction);
             break;
         case IrInstructionIdVarPtr:
             ir_print_var_ptr(irp, (IrInstructionVarPtr *)instruction);

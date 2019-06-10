@@ -2100,7 +2100,7 @@ static bool iter_function_params_c_abi(CodeGen *g, ZigType *fn_type, FnWalk *fn_
     }
 
     if (type_is_c_abi_int(g, ty) || ty->id == ZigTypeIdFloat || ty->id == ZigTypeIdVector ||
-        ty->id == ZigTypeIdInt // TODO investigate if we need to change this
+        ty->id == ZigTypeIdInt || ty->id == ZigTypeIdStruct || ty->id == ZigTypeIdUnion // TODO investigate if we need to change this
     ) {
         switch (fn_walk->id) {
             case FnWalkIdAttrs: {
@@ -2122,12 +2122,15 @@ static bool iter_function_params_c_abi(CodeGen *g, ZigType *fn_type, FnWalk *fn_
             case FnWalkIdCall:
                 fn_walk->data.call.gen_param_values->append(val);
                 break;
-            case FnWalkIdTypes:
+            case FnWalkIdTypes: {
+                if ((uintptr_t)ty->llvm_type != 0) printf("hello: %s \n", LLVMPrintTypeToString(ty->llvm_type));
                 fn_walk->data.types.gen_param_types->append(get_llvm_type(g, ty));
                 fn_walk->data.types.param_di_types->append(get_llvm_di_type(g, ty));
                 break;
+            }
             case FnWalkIdVars: {
-                var->value_ref = build_alloca(g, ty, buf_ptr(&var->name), var->align_bytes);
+                var->value_ref = LLVMGetParam(llvm_fn, fn_walk->data.vars.gen_i);
+                if ((uintptr_t)var->value_ref!= 0)LLVMDumpValue(var->value_ref);
                 di_arg_index = fn_walk->data.vars.gen_i;
                 fn_walk->data.vars.gen_i += 1;
                 dest_ty = ty;
@@ -3565,6 +3568,58 @@ static LLVMValueRef ir_render_var_ptr(CodeGen *g, IrExecutable *executable, IrIn
         return var->value_ref;
     } else {
         return nullptr;
+    }
+}
+
+static LLVMValueRef ir_render_insert(CodeGen *g, IrExecutable *executable, IrInstructionInsert *instruction) {
+    assert(instruction->elems->llvm_value);
+    assert(instruction->insert->llvm_value);
+    assert(instruction->elem_index->llvm_value);
+    ZigType *type = instruction->base.value.type;
+    if (ir_want_runtime_safety(g, &instruction->base) &&
+        !instr_is_comptime(instruction->elem_index)) {
+        assert(type->id == ZigTypeIdVector);
+        LLVMValueRef end = LLVMConstInt(g->builtin_types.entry_u32->llvm_type,
+                type->data.vector.len, false);
+        add_bounds_check(g, instruction->elem_index->llvm_value, LLVMIntEQ, nullptr, LLVMIntULE, end);
+    }
+    if (type->id == ZigTypeIdVector) {
+        return LLVMBuildInsertElement(g->builder, instruction->elem_index->llvm_value,
+               instruction->insert->llvm_value, instruction->elem_index->llvm_value, "");
+    } else if (type->id == ZigTypeIdArray ||
+            type->id == ZigTypeIdStruct) {
+        return LLVMBuildInsertValue(g->builder, instruction->elem_index->llvm_value,
+               instruction->insert->llvm_value,
+               bigint_as_unsigned(&instruction->elem_index->value.data.x_bigint), "");
+    } else if (type->id == ZigTypeIdUnion) {
+        zig_panic("TODO insertvalue on unions");
+    } else {
+        zig_panic("unhandled type for insert");
+    }
+}
+
+static LLVMValueRef ir_render_extract(CodeGen *g, IrExecutable *executable, IrInstructionExtract *instruction) {
+    assert(instruction->elems->llvm_value);
+    assert(instruction->elem_index->llvm_value);
+    ZigType *type = instruction->base.value.type;
+    if (ir_want_runtime_safety(g, &instruction->base) &&
+        !instr_is_comptime(instruction->elem_index)) {
+        assert(type->id == ZigTypeIdVector);
+        LLVMValueRef end = LLVMConstInt(g->builtin_types.entry_u32->llvm_type,
+                type->data.vector.len, false);
+        add_bounds_check(g, instruction->elem_index->llvm_value, LLVMIntEQ, nullptr, LLVMIntULE, end);
+    }
+    if (type->id == ZigTypeIdVector) {
+        return LLVMBuildExtractElement(g->builder, instruction->elem_index->llvm_value,
+               instruction->elem_index->llvm_value, "");
+    } else if (type->id == ZigTypeIdArray ||
+            type->id == ZigTypeIdStruct) {
+        return LLVMBuildExtractValue(g->builder, instruction->elem_index->llvm_value,
+               bigint_as_unsigned(&instruction->elem_index->value.data.x_bigint), "");
+    } else if (type->id == ZigTypeIdUnion) {
+        zig_panic("TODO extractvalue on unions");
+    } else {
+        zig_panic("unhandled type for insert");
     }
 }
 
@@ -5634,6 +5689,10 @@ static LLVMValueRef ir_render_instruction(CodeGen *g, IrExecutable *executable, 
             return ir_render_var_ptr(g, executable, (IrInstructionVarPtr *)instruction);
         case IrInstructionIdElemPtr:
             return ir_render_elem_ptr(g, executable, (IrInstructionElemPtr *)instruction);
+        case IrInstructionIdExtract:
+            return ir_render_extract(g, executable, (IrInstructionExtract *)instruction);
+        case IrInstructionIdInsert:
+            return ir_render_insert(g, executable, (IrInstructionInsert *)instruction);
         case IrInstructionIdCall:
             return ir_render_call(g, executable, (IrInstructionCall *)instruction);
         case IrInstructionIdStructFieldPtr:
@@ -8347,7 +8406,10 @@ void add_cc_args(CodeGen *g, ZigList<const char *> &args, const char *out_dep_pa
     }
 
     if (g->zig_target->is_native) {
-        args.append("-march=native");
+        if (g->zig_target->arch == ZigLLVM_ppc64le)
+            args.append("-mcpu=native");
+        else
+            args.append("-march=native");
     } else {
         args.append("-target");
         args.append(buf_ptr(&g->triple_str));

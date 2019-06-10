@@ -23,7 +23,5 @@ pub fn addCases(cases: *tests.BuildExamplesContext) void {
         cases.addBuildFile("test/standalone/load_dynamic_library/build.zig");
     }
 
-    if (builtin.arch == builtin.Arch.x86_64) { // TODO add C ABI support for other architectures
-        cases.addBuildFile("test/stage1/c_abi/build.zig");
-    }
+    cases.addBuildFile("test/stage1/c_abi/build.zig");
 }

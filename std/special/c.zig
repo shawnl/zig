@@ -159,7 +159,7 @@ extern fn __stack_chk_fail() noreturn {
 // it causes a segfault in release mode. this is a workaround of calling it
 // across .o file boundaries. fix comptime @ptrCast of nakedcc functions.
 nakedcc fn clone() void {
-    if (builtin.arch == builtin.Arch.x86_64) {
+    if (builtin.arch == .x86_64) {
         asm volatile (
             \\      xor %%eax,%%eax
             \\      mov $56,%%al // SYS_clone
@@ -186,7 +186,7 @@ nakedcc fn clone() void {
             \\1:    ret
             \\
         );
-    } else if (builtin.arch == builtin.Arch.aarch64) {
+    } else if (builtin.arch == .aarch64) {
         // __clone(func, stack, flags, arg, ptid, tls, ctid)
         //         x0,   x1,    w2,    x3,  x4,   x5,  x6
 
@@ -213,6 +213,51 @@ nakedcc fn clone() void {
             \\      blr x1
             \\      mov x8,#93 // SYS_exit
             \\      svc #0
+        );
+    } else if (builtin.arch == .powerpc64le) {
+        //int clone(fn, stack, flags, arg, ptid, tls, ctid)
+        //            a  b       c     d     e    f    g
+        //            3  4       5     6     7    8    9
+        // pseudo C code:
+        // tid = syscall(SYS_clone,c,b,e,f,g);
+        // if (!tid) syscall(SYS_exit, a(d));
+        // return tid;
+        asm volatile (
+            \\# create initial stack frame for new thread
+            \\clrrdi 4, 4, 4
+            \\li     0, 0
+            \\stdu   0,-32(4)
+            \\
+            \\# save fn and arg to child stack
+            \\std    3,  8(4)
+            \\std    6, 16(4)
+            \\
+            \\# shuffle args into correct registers and call SYS_clone
+            \\mr    3, 5
+            \\#mr   4, 4
+            \\mr    5, 7
+            \\mr    6, 8
+            \\mr    7, 9
+            \\li    0, 120  # SYS_clone = 120
+            \\sc
+            \\
+            \\# if error, negate return (errno)
+            \\bns+  1f
+            \\neg   3, 3
+            \\
+    \\1:	# if we're the parent, return
+            \\cmpwi cr7, 3, 0
+            \\bnelr cr7
+            \\
+            \\# we're the child. call fn(arg)
+            \\ld     3, 16(1)
+            \\ld    12,  8(1)
+            \\mtctr 12
+            \\bctrl
+            \\
+            \\# call SYS_exit. exit code is already in r3 from fn return value
+            \\li    0, 1    # SYS_exit = 1
+            \\sc
         );
     } else {
         @compileError("Implement clone() for this arch.");

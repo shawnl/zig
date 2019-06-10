@@ -840,6 +840,13 @@ ZigType *get_ptr_to_stack_trace_type(CodeGen *g) {
 }
 
 bool want_first_arg_sret(CodeGen *g, FnTypeId *fn_type_id) {
+    if (g->zig_target->arch == ZigLLVM_ppc64le) {
+        // https://openpowerfoundation.org/?resource_lib=64-bit-elf-v2-abi-specification-power-architecture
+        // 2.2.5 Return Values
+        // LLVM's Power backend actually implements the C ABI!
+        // (e.g. test/CodeGen/PowerPC/ppc64le-aggregates.ll)
+        return false;
+    }
     if (fn_type_id->cc == CallingConventionUnspecified) {
         return handle_is_ptr(fn_type_id->return_type);
     }
@@ -7127,7 +7134,7 @@ static void resolve_llvm_types_fn(CodeGen *g, ZigType *fn_type) {
             continue;
 
         ZigType *gen_type;
-        if (handle_is_ptr(type_entry)) {
+        if (handle_is_ptr(type_entry) && !(g->zig_target->arch == ZigLLVM_ppc64le)) {
             gen_type = get_pointer_to_type(g, type_entry, true);
             gen_param_info->is_byval = true;
         } else {

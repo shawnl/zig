@@ -18,6 +18,7 @@
 #if __GNUC__ >= 8
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
+#pragma GCC diagnostic ignored "-Winit-list-lifetime"
 #endif
 
 #include <llvm/Analysis/TargetLibraryInfo.h>

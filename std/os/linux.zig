@@ -17,6 +17,7 @@ pub const is_the_target = builtin.os == .linux;
 pub usingnamespace switch (builtin.arch) {
     .x86_64 => @import("linux/x86_64.zig"),
     .aarch64 => @import("linux/arm64.zig"),
+    .powerpc64le => @import("linux/ppc64el.zig"),
     else => struct {},
 };
 pub usingnamespace @import("bits.zig");
@@ -681,7 +682,10 @@ pub fn accept4(fd: i32, noalias addr: *sockaddr, noalias len: *socklen_t, flags:
 }
 
 pub fn fstat(fd: i32, stat_buf: *Stat) usize {
-    return syscall2(SYS_fstat, @bitCast(usize, isize(fd)), @ptrToInt(stat_buf));
+    if (@hasDecl(@This(), "SYS_fstat")) {
+        return syscall2(SYS_fstat, @bitCast(usize, isize(fd)), @ptrToInt(stat_buf));
+    }
+    return fstatat(fd, c"", stat_buf, AT_EMPTY_PATH);
 }
 
 // TODO https://github.com/ziglang/zig/issues/265
@@ -691,11 +695,17 @@ pub fn stat(pathname: [*]const u8, statbuf: *Stat) usize {
 
 // TODO https://github.com/ziglang/zig/issues/265
 pub fn lstat(pathname: [*]const u8, statbuf: *Stat) usize {
-    return syscall2(SYS_lstat, @ptrToInt(pathname), @ptrToInt(statbuf));
+    if (@hasDecl(@This(), "SYS_lstat")) {
+        return syscall2(SYS_lstat, @ptrToInt(pathname), @ptrToInt(statbuf));
+    }
+    return fstatat(AT_SYMLINK_NOFOLLOW, pathname, statbuf, 0);
 }
 
 // TODO https://github.com/ziglang/zig/issues/265
 pub fn fstatat(dirfd: i32, path: [*]const u8, stat_buf: *Stat, flags: u32) usize {
+    if (@hasDecl(@This(), "SYS_newfstatat")) {
+        return syscall4(SYS_newfstatat, @bitCast(usize, isize(dirfd)), @ptrToInt(path), @ptrToInt(stat_buf), flags);
+    }
     return syscall4(SYS_fstatat, @bitCast(usize, isize(dirfd)), @ptrToInt(path), @ptrToInt(stat_buf), flags);
 }
 
