@@ -13,6 +13,7 @@
 #include "userland.h"
 
 void zig_panic(const char *format, ...) {
+abort();
     va_list ap;
     va_start(ap, format);
     vfprintf(stderr, format, ap);
@@ -24,6 +25,7 @@ void zig_panic(const char *format, ...) {
 
 void assert(bool ok) {
     if (!ok) {
+  abort();
         const char *msg = "Assertion failed. This is a bug in the Zig compiler.";
         stage2_panic(msg, strlen(msg));
     }

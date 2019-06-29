@@ -7276,6 +7276,7 @@ void src_assert(bool ok, AstNode *source_node) {
             buf_ptr(source_node->owner->data.structure.root_struct->path),
             (unsigned)source_node->line + 1, (unsigned)source_node->column + 1);
     }
+   abort();
     const char *msg = "assertion failed. This is a bug in the Zig compiler.";
     stage2_panic(msg, strlen(msg));
 }
