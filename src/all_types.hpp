@@ -323,7 +323,7 @@ struct ConstExprValue {
         BigInt x_enum_tag;
         ConstStructValue x_struct;
         ConstUnionValue x_union;
-        ConstArrayValue x_array;
+        ConstArrayValue x_array; // also vectors
         ConstPtrValue x_ptr;
         ConstArgTuple x_arg_tuple;
         Buf *x_enum_literal;
@@ -2204,6 +2204,7 @@ enum IrInstructionId {
     IrInstructionIdLoadPtr,
     IrInstructionIdLoadPtrGen,
     IrInstructionIdStorePtr,
+    IrInstructionIdBoolVectorToBool,
     IrInstructionIdFieldPtr,
     IrInstructionIdStructFieldPtr,
     IrInstructionIdUnionFieldPtr,
@@ -2573,6 +2574,14 @@ struct IrInstructionElemPtr {
     IrInstruction *init_array_type;
     PtrLen ptr_len;
     bool safety_check_on;
+};
+
+struct IrInstructionBoolVectorToBool {
+    IrInstruction base;
+
+    bool is_any; // else is all
+    bool is_function_ptr; // This is a function, even if it is not supported as a function pointer
+    IrInstruction *vector;
 };
 
 struct IrInstructionVarPtr {

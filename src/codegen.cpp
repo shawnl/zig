@@ -3423,6 +3423,24 @@ static LLVMValueRef ir_render_load_ptr(CodeGen *g, IrExecutable *executable, IrI
     return LLVMBuildTrunc(g->builder, shifted_value, get_llvm_type(g, child_type), "");
 }
 
+static LLVMValueRef ir_render_bool_vector_to_bool(CodeGen *g, IrExecutable *executable, IrInstructionBoolVectorToBool *instruction) {
+    // This could be done with a IrInstructionExtract, but
+    // as I think it makes sense to be a different instruction with
+    // differn't lowering.
+    LLVMValueRef result = LLVMConstInt(g->builtin_types.entry_bool->llvm_type,
+        instruction->is_any ? 0 : 1, false);
+    for (size_t i = 0;i < instruction->vector->value.type->data.vector.len;i++) {
+        LLVMValueRef i_val = LLVMConstInt(g->builtin_types.entry_i32->llvm_type, i, false);
+        LLVMValueRef extract = LLVMBuildExtractElement(g->builder, ir_llvm_value(g, instruction->vector),
+            i_val, "");
+        if (instruction->is_any)
+            result = LLVMBuildOr(g->builder, result, extract, "test_any");
+        else
+            result = LLVMBuildAnd(g->builder, result, extract, "test_all");
+    }
+    return result;
+}
+
 static bool value_is_all_undef_array(ConstExprValue *const_val, size_t len) {
     switch (const_val->data.x_array.special) {
         case ConstArraySpecialUndef:
@@ -5683,6 +5701,8 @@ static LLVMValueRef ir_render_instruction(CodeGen *g, IrExecutable *executable, 
             return ir_render_load_ptr(g, executable, (IrInstructionLoadPtrGen *)instruction);
         case IrInstructionIdStorePtr:
             return ir_render_store_ptr(g, executable, (IrInstructionStorePtr *)instruction);
+        case IrInstructionIdBoolVectorToBool:
+            return ir_render_bool_vector_to_bool(g, executable, (IrInstructionBoolVectorToBool *)instruction);
         case IrInstructionIdVarPtr:
             return ir_render_var_ptr(g, executable, (IrInstructionVarPtr *)instruction);
         case IrInstructionIdReturnPtr:
