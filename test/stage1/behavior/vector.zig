@@ -109,3 +109,67 @@ test "vector casts of sizes not divisable by 8" {
     S.doTheTest();
     comptime S.doTheTest();
 }
+
+test "implicit cast vector to array - bool" {
+    const S = struct {
+        fn doTheTest() void {
+            const a: @Vector(4, bool) = [_]bool{ true, false, true, false };
+            const result_array: [4]bool = a;
+            expect(mem.eql(bool, result_array, [4]bool{ true, false, true, false }));
+        }
+    };
+    S.doTheTest();
+    comptime S.doTheTest();
+}
+
+test "vector bin compares with mem.eql" {
+    const S = struct {
+        fn doTheTest() void {
+            var v: @Vector(4, i32) = [4]i32{ 2147483647, -2, 30, 40 };
+            var x: @Vector(4, i32) = [4]i32{ 1, 2147483647, 30, 4 };
+            expect(mem.eql(bool, ([4]bool)(v == x), [4]bool{ false, false,  true, false}));
+            expect(mem.eql(bool, ([4]bool)(v != x), [4]bool{  true,  true, false,  true}));
+            expect(mem.eql(bool, ([4]bool)(v  < x), [4]bool{ false,  true, false, false}));
+            expect(mem.eql(bool, ([4]bool)(v  > x), [4]bool{  true, false, false,  true}));
+            expect(mem.eql(bool, ([4]bool)(v <= x), [4]bool{ false,  true,  true, false}));
+            expect(mem.eql(bool, ([4]bool)(v >= x), [4]bool{  true, false,  true,  true}));
+        }
+    };
+    S.doTheTest();
+    comptime S.doTheTest();
+}
+
+test "vector access elements - load" {
+    {
+        var a: @Vector(4, i32) = [_]i32{ 1, 2, 3, undefined };
+        expect(a[2] == 3);
+        expect(a[1] == i32(2));
+        expect(3 == a[2]);
+    }
+
+    comptime {
+        comptime var a: @Vector(4, i32) = [_]i32{ 1, 2, 3, undefined };
+        expect(a[0] == 1);
+        expect(a[1] == i32(2));
+        expect(3 == a[2]);
+    }
+}
+
+test "vector access elements - store" {
+    {
+        var a: @Vector(4, i32) = [_]i32{ 1, 5, 3, undefined };
+        a[2] = 1;
+        expect(a[1] == 5);
+        expect(a[2] == i32(1));
+        a[3] = -364;
+        expect(-364 == a[3]);
+    }
+
+    comptime {
+        comptime var a: @Vector(4, i32) = [_]i32{ 1, 2, 3, undefined };
+        a[2] = 5;
+        expect(a[2] == i32(5));
+        a[3] = -364;
+        expect(-364 == a[3]);
+    }
+}

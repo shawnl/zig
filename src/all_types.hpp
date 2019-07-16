@@ -2210,13 +2210,14 @@ enum IrInstructionId {
     IrInstructionIdPhi,
     IrInstructionIdUnOp,
     IrInstructionIdBinOp,
-    IrInstructionIdLoadPtr,
+    IrInstructionIdLoad,
     IrInstructionIdLoadPtrGen,
-    IrInstructionIdStorePtr,
+    IrInstructionIdStore,
+    IrInstructionIdExtractInsert,
     IrInstructionIdFieldPtr,
     IrInstructionIdStructFieldPtr,
     IrInstructionIdUnionFieldPtr,
-    IrInstructionIdElemPtr,
+    IrInstructionIdElem,
     IrInstructionIdVarPtr,
     IrInstructionIdReturnPtr,
     IrInstructionIdCallSrc,
@@ -2530,10 +2531,21 @@ struct IrInstructionBinOp {
     bool safety_check_on;
 };
 
-struct IrInstructionLoadPtr {
+struct IrInstructionLoad {
     IrInstruction base;
 
     IrInstruction *ptr;
+};
+
+struct IrInstructionExtractInsert {
+    IrInstruction base;
+
+    IrInstruction *agg;
+    IrInstruction *index;
+    // nullptr if Extract
+    IrInstruction *value;
+    // only used if Extract
+    IrInstruction *result_loc;
 };
 
 struct IrInstructionLoadPtrGen {
@@ -2543,7 +2555,7 @@ struct IrInstructionLoadPtrGen {
     IrInstruction *result_loc;
 };
 
-struct IrInstructionStorePtr {
+struct IrInstructionStore {
     IrInstruction base;
 
     IrInstruction *ptr;
@@ -2576,7 +2588,7 @@ struct IrInstructionUnionFieldPtr {
     TypeUnionField *field;
 };
 
-struct IrInstructionElemPtr {
+struct IrInstructionElem {
     IrInstruction base;
 
     IrInstruction *array_ptr;
