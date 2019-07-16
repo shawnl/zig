@@ -2212,6 +2212,9 @@ enum IrInstructionId {
     IrInstructionIdLoadPtr,
     IrInstructionIdLoadPtrGen,
     IrInstructionIdStorePtr,
+    IrInstructionIdVectorElem,
+    IrInstructionIdExtract,
+    IrInstructionIdInsert,
     IrInstructionIdFieldPtr,
     IrInstructionIdStructFieldPtr,
     IrInstructionIdUnionFieldPtr,
@@ -2533,6 +2536,29 @@ struct IrInstructionLoadPtr {
     IrInstruction base;
 
     IrInstruction *ptr;
+};
+
+struct IrInstructionVectorElem {
+    IrInstruction base;
+
+    IrInstruction *agg;
+    IrInstruction *index;
+    IrInstruction *result_loc;
+};
+
+struct IrInstructionExtract {
+    IrInstruction base;
+
+    IrInstruction *agg;
+    IrInstruction *index;
+};
+
+struct IrInstructionInsert {
+    IrInstruction base;
+
+    IrInstruction *agg;
+    IrInstruction *index;
+    IrInstruction *value;
 };
 
 struct IrInstructionLoadPtrGen {
