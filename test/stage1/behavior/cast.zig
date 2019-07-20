@@ -327,6 +327,24 @@ test "@intCast comptime_int" {
     expect(result == 1234);
 }
 
+test "@intCast of vector" {
+    var v: @Vector(8, u8) = [_]u8{0, 1, 2, 3, 4, 5, 6, 7};
+    var w = @intCast(u16, v);
+    comptime var i: usize = 0;
+    inline while (i < 8) : (i += 1) {
+        expect(w[i] == i);
+    }
+}
+
+test "@floatCast of vector" {
+    var v: @Vector(8, f16) = [_]f16{0, 1, 2, 3, 4, 5, 6, 7};
+    var w = @floatCast(f32, v);
+    comptime var i: usize = 0;
+    inline while (i < 8) : (i += 1) {
+        expect(w[i] == i);
+    }
+}
+
 test "@floatCast comptime_int and comptime_float" {
     {
         const result = @floatCast(f16, 1234);
