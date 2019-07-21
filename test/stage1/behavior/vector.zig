@@ -261,3 +261,19 @@ test "vector access elements - store" {
         expect(-364 == a[3]);
     }
 }
+
+test "vector @splat" {
+    const S = struct {
+        fn doTheTest() void {
+            var v: u32 = 5;
+            var x = @splat(4, v);
+            expect(@typeOf(x) == @Vector(4, u32));
+            expect(x[0] == 5);
+            expect(x[1] == 5);
+            expect(x[2] == 5);
+            expect(x[3] == 5);
+        }
+    };
+    S.doTheTest();
+    comptime S.doTheTest();
+}

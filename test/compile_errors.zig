@@ -6070,6 +6070,16 @@ pub fn addCases(cases: *tests.CompileErrorContext) void {
     );
 
     cases.addTest(
+        "bad @splat type",
+        \\export fn entry() void {
+        \\    const c = 4;
+        \\    var v = @splat(4, c);
+        \\}
+    ,
+        "tmp.zig:2:20: error: vector element type must be integer, float, bool, or pointer; 'comptime_int' is invalid",
+    );
+
+    cases.addTest(
         "vector out-of bounds index",
         \\export fn entry() void {
         \\    var v: @Vector(4, u32) = [4]u32{0, 1, 2, 3};
