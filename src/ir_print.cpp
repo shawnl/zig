@@ -872,6 +872,14 @@ static void ir_print_shuffle_vector(IrPrint *irp, IrInstructionShuffleVector *in
     fprintf(irp->f, ")");
 }
 
+static void ir_print_splat(IrPrint *irp, IrInstructionSplat *instruction) {
+    fprintf(irp->f, "@splat(");
+    ir_print_other_instruction(irp, instruction->len);
+    fprintf(irp->f, ", ");
+    ir_print_other_instruction(irp, instruction->scalar);
+    fprintf(irp->f, ")");
+}
+
 static void ir_print_bool_not(IrPrint *irp, IrInstructionBoolNot *instruction) {
     fprintf(irp->f, "! ");
     ir_print_other_instruction(irp, instruction->value);
@@ -1881,6 +1889,9 @@ static void ir_print_instruction(IrPrint *irp, IrInstruction *instruction) {
             break;
         case IrInstructionIdShuffleVector:
             ir_print_shuffle_vector(irp, (IrInstructionShuffleVector *)instruction);
+            break;
+        case IrInstructionIdSplat:
+            ir_print_splat(irp, (IrInstructionSplat *)instruction);
             break;
         case IrInstructionIdBoolNot:
             ir_print_bool_not(irp, (IrInstructionBoolNot *)instruction);
