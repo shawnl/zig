@@ -80,3 +80,32 @@ test "array to vector" {
     var arr = [4]f32{ foo, 1.5, 0.0, 0.0 };
     var vec: @Vector(4, f32) = arr;
 }
+
+test "vector casts of sizes not divisable by 8" {
+    const S = struct {
+        fn doTheTest() void {
+            {
+                var v: @Vector(4, u3) = [4]u3{ 5, 2,  3, 0};
+                var x: [4]u3 = v;
+                expect(mem.eql(u3, x, ([4]u3)(v)));
+            }
+            {
+                var v: @Vector(4, u2) = [4]u2{ 1, 2,  3, 0};
+                var x: [4]u2 = v;
+                expect(mem.eql(u2, x, ([4]u2)(v)));
+            }
+            {
+                var v: @Vector(4, u1) = [4]u1{ 1, 0,  1, 0};
+                var x: [4]u1 = v;
+                expect(mem.eql(u1, x, ([4]u1)(v)));
+            }
+            {
+                var v: @Vector(4, bool) = [4]bool{ false, false,  true, false};
+                var x: [4]bool = v;
+                expect(mem.eql(bool, x, ([4]bool)(v)));
+            }
+        }
+    };
+    S.doTheTest();
+    comptime S.doTheTest();
+}
