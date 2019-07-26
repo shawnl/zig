@@ -218,6 +218,32 @@ test "vector bin compares with mem.eql" {
     comptime S.doTheTest();
 }
 
+test "vector member field access" {
+    const S = struct {
+        fn doTheTest() void {
+            const q: @Vector(4, u32) = undefined;
+            expect(q.len == 4);
+            const v = @Vector(4, i32);
+            expect(v.len == 4);
+            expect(v.bit_count == 32);
+            expect(v.is_signed == true);
+            const k = @Vector(2, bool);
+            expect(k.len == 2);
+            const x = @Vector(3, f32);
+            expect(x.len == 3);
+            expect(x.bit_count == 32);
+            const z = @Vector(3, *align(4) u32);
+            expect(z.len == 3);
+            expect(z.Child == u32);
+            // FIXME is this confusing? However vector alignment requirements are entirely
+            // dependant on their size, and can be gotten with @alignOf().
+            expect(z.alignment == 4);
+        }
+    };
+    S.doTheTest();
+    comptime S.doTheTest();
+}
+
 test "vector access elements - load" {
     {
         var a: @Vector(4, i32) = [_]i32{ 1, 2, 3, undefined };
