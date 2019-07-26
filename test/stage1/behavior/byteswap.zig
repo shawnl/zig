@@ -1,5 +1,6 @@
 const std = @import("std");
 const expect = std.testing.expect;
+const all = std.vector.all;
 
 test "@byteSwap" {
     comptime testByteSwap();
@@ -37,7 +38,7 @@ fn testByteSwap() void {
 }
 
 fn testVectorByteSwap() void {
-    expect((@byteSwap(u8, @Vector(2, u8)([2]u8{0x12, 0x13})) == @Vector(2, u8)([2]u8{0x12, 0x13})).all);
-    expect((@byteSwap(u16, @Vector(2, u16)([2]u16{0x1234, 0x2345})) == @Vector(2, u16)([2]u16{0x3412, 0x4523})).all);
-    expect((@byteSwap(u24, @Vector(2, u24)([2]u24{0x123456, 0x234567})) == @Vector(2, u24)([2]u24{0x563412, 0x674523})).all);
+    expect(all(@byteSwap(u8, @Vector(2, u8)([2]u8{0x12, 0x13})) == @Vector(2, u8)([2]u8{0x12, 0x13})));
+    expect(all(@byteSwap(u16, @Vector(2, u16)([2]u16{0x1234, 0x2345})) == @Vector(2, u16)([2]u16{0x3412, 0x4523})));
+    expect(all(@byteSwap(u24, @Vector(2, u24)([2]u24{0x123456, 0x234567})) == @Vector(2, u24)([2]u24{0x563412, 0x674523})));
 }

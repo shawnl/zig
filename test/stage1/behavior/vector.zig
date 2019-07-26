@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const builtin = @import("builtin");
 const expect = std.testing.expect;
 
 test "implicit cast vector to array - bool" {
@@ -298,6 +299,81 @@ test "vector @splat" {
             expect(x[1] == 5);
             expect(x[2] == 5);
             expect(x[3] == 5);
+        }
+    };
+    S.doTheTest();
+    comptime S.doTheTest();
+}
+
+test "vector @bitCast" {
+    const S = struct {
+        fn doTheTest() void {
+            {
+                const math = @import("std").math;
+                const v: @Vector(4, u32) = [4]u32{ 0x7F800000, 0x7F800001, 0xFF800000, 0};
+                const x: @Vector(4, f32) = @bitCast(f32, v);
+                expect(x[0] == math.inf(f32));
+                expect(x[1] != x[1]); // NaN
+                expect(x[2] == -math.inf(f32));
+                expect(x[3] == 0);
+            }
+            {
+                const math = @import("std").math;
+                const v: @Vector(2, u64) = [2]u64{ 0x7F8000017F800000, 0xFF800000};
+                const x: @Vector(4, f32) = @bitCast(@Vector(4, f32), v);
+                expect(x[0] == math.inf(f32));
+                expect(x[1] != x[1]); // NaN
+                expect(x[2] == -math.inf(f32));
+                expect(x[3] == 0);
+            }
+            {
+                const v: @Vector(4, u8) = [_]u8{2, 1, 2, 1};
+                const x: u32 = @bitCast(u32, v);
+                expect(x == 0x01020102);
+                const z: @Vector(4, u8) = @bitCast(@Vector(4, u8), x);
+                expect(z[0] == 2);
+                expect(z[1] == 1);
+                expect(z[2] == 2);
+                expect(z[3] == 1);
+            }
+            {
+                const v: @Vector(4, i8) = [_]i8{2, 1, 0, -128};
+                const x: u32 = @bitCast(u32, v);
+                expect(x == 0x80000102);
+            }
+            {
+                const v: @Vector(4, u1) = [_]u1{1, 1, 0, 1};
+                const x: u4 = @bitCast(u4, v);
+                expect(x == 0b1011);
+            }
+            {
+                const v: @Vector(4, u3) = [_]u3{0b100, 0b111, 0, 1};
+                const x: u12 = @bitCast(u12, v);
+                expect(x == 0b001000111100);
+                const z: @Vector(4, u3) = @bitCast(@Vector(4, u3), x);
+                expect(z[0] == 0b100);
+                expect(z[1] == 0b111);
+                expect(z[2] == 0);
+                expect(z[3] == 1);
+            }
+            {
+                const v: @Vector(2, u9) = [_]u9{2, 1};
+                const x: u18 = @bitCast(u18, v);
+                expect(x == 0b000000001000000010);
+                const z: @Vector(2, u9) = @bitCast(@Vector(2, u9), x);
+                expect(z[0] == 2);
+                expect(z[1] == 1);
+            }
+            {
+                const v: @Vector(4, bool) = [_]bool{false, true, false, true};
+                const x: u4 = @bitCast(u4, v);
+                expect(x == 0b1010);
+                const z: @Vector(4, bool) = @bitCast(@Vector(4, bool), x);
+                expect(z[0] == false);
+                expect(z[1] == true);
+                expect(z[2] == false);
+                expect(z[3] == true);
+            }
         }
     };
     S.doTheTest();
