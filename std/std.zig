@@ -57,6 +57,7 @@ pub const testing = @import("testing.zig");
 pub const time = @import("time.zig");
 pub const unicode = @import("unicode.zig");
 pub const valgrind = @import("valgrind.zig");
+pub const vector = @import("vector.zig");
 pub const zig = @import("zig.zig");
 
 test "std" {
@@ -112,6 +113,7 @@ test "std" {
     _ = @import("time.zig");
     _ = @import("unicode.zig");
     _ = @import("valgrind.zig");
+    _ = @import("vector.zig");
     _ = @import("zig.zig");
 
     _ = @import("debug/leb128.zig");
