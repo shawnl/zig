@@ -16777,10 +16777,11 @@ static IrInstruction *ir_analyze_maybe(IrAnalyze *ira, IrInstructionUnOp *un_op_
 static ErrorMsg *ir_eval_negation_scalar(IrAnalyze *ira, IrInstruction *source_instr, ZigType *scalar_type,
         ConstExprValue *operand_val, ConstExprValue *scalar_out_val, bool is_wrap_op)
 {
+    bool is_bool = scalar_type->id == ZigTypeIdBool;
     bool is_float = (scalar_type->id == ZigTypeIdFloat || scalar_type->id == ZigTypeIdComptimeFloat);
 
     bool ok_type = ((scalar_type->id == ZigTypeIdInt && scalar_type->data.integral.is_signed) ||
-        scalar_type->id == ZigTypeIdComptimeInt || (is_float && !is_wrap_op));
+        scalar_type->id == ZigTypeIdComptimeInt || (is_float && !is_wrap_op) || is_bool);
 
     if (!ok_type) {
         const char *fmt = is_wrap_op ? "invalid wrapping negation type: '%s'" : "invalid negation type: '%s'";
@@ -16789,6 +16790,12 @@ static ErrorMsg *ir_eval_negation_scalar(IrAnalyze *ira, IrInstruction *source_i
 
     if (is_float) {
         float_negate(scalar_out_val, operand_val);
+    } else if (is_bool) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wbool-operation"
+        scalar_out_val->data.x_bool = ~operand_val->data.x_bool;
+#pragma GCC diagnostic pop
+        scalar_out_val->special = ConstValSpecialStatic;
     } else if (is_wrap_op) {
         bigint_negate_wrap(&scalar_out_val->data.x_bigint, &operand_val->data.x_bigint,
                 scalar_type->data.integral.bit_count);
@@ -16799,7 +16806,7 @@ static ErrorMsg *ir_eval_negation_scalar(IrAnalyze *ira, IrInstruction *source_i
     scalar_out_val->type = scalar_type;
     scalar_out_val->special = ConstValSpecialStatic;
 
-    if (is_wrap_op || is_float || scalar_type->id == ZigTypeIdComptimeInt) {
+    if (is_wrap_op || is_float || is_bool || scalar_type->id == ZigTypeIdComptimeInt) {
         return nullptr;
     }
 
@@ -16869,7 +16876,7 @@ static IrInstruction *ir_analyze_bin_not(IrAnalyze *ira, IrInstructionUnOp *inst
     if (type_is_invalid(expr_type))
         return ira->codegen->invalid_instruction;
 
-    if (expr_type->id == ZigTypeIdInt) {
+    if (expr_type->id == ZigTypeIdBool || expr_type->id == ZigTypeIdInt) {
         if (instr_is_comptime(value)) {
             ConstExprValue *target_const_val = ir_resolve_const(ira, value, UndefBad);
             if (target_const_val == nullptr)

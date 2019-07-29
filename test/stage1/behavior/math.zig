@@ -257,6 +257,10 @@ test "binary not" {
     expect(comptime x: {
         break :x ~u64(2147483647) == 18446744071562067968;
     });
+    expect(comptime x: {
+        break :x ~true == false;
+    });
+    expect(~false == true);
     testBinaryNot(0b1010101010101010);
 }
 
