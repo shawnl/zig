@@ -13790,16 +13790,23 @@ static IrInstruction *ir_analyze_bin_op_cmp(IrAnalyze *ira, IrInstructionBinOp *
 static ErrorMsg *ir_eval_math_op_scalar(IrAnalyze *ira, IrInstruction *source_instr, ZigType *type_entry,
         ConstExprValue *op1_val, IrBinOp op_id, ConstExprValue *op2_val, ConstExprValue *out_val)
 {
+    bool is_bool;
     bool is_int;
     bool is_float;
     Cmp op2_zcmp;
     if (type_entry->id == ZigTypeIdInt || type_entry->id == ZigTypeIdComptimeInt) {
+        is_bool = false;
         is_int = true;
         is_float = false;
         op2_zcmp = bigint_cmp_zero(&op2_val->data.x_bigint);
+    } else if (type_entry->id == ZigTypeIdBool) {
+        is_bool = true;
+        is_int = false;
+        is_float = false;
     } else if (type_entry->id == ZigTypeIdFloat ||
                 type_entry->id == ZigTypeIdComptimeFloat)
     {
+        is_bool = false;
         is_int = false;
         is_float = true;
         op2_zcmp = float_cmp_zero(op2_val);
@@ -13832,16 +13839,31 @@ static ErrorMsg *ir_eval_math_op_scalar(IrAnalyze *ira, IrInstruction *source_in
         case IrBinOpMergeErrorSets:
             zig_unreachable();
         case IrBinOpBinOr:
-            assert(is_int);
-            bigint_or(&out_val->data.x_bigint, &op1_val->data.x_bigint, &op2_val->data.x_bigint);
+            if (is_bool) {
+                out_val->data.x_bool = op1_val->data.x_bool | op2_val->data.x_bool;
+            } else if (is_int) {
+                bigint_or(&out_val->data.x_bigint, &op1_val->data.x_bigint, &op2_val->data.x_bigint);
+            } else {
+                zig_unreachable();
+            }
             break;
         case IrBinOpBinXor:
-            assert(is_int);
-            bigint_xor(&out_val->data.x_bigint, &op1_val->data.x_bigint, &op2_val->data.x_bigint);
+            if (is_bool) {
+                out_val->data.x_bool = op1_val->data.x_bool ^ op2_val->data.x_bool;
+            } else if (is_int) {
+                bigint_xor(&out_val->data.x_bigint, &op1_val->data.x_bigint, &op2_val->data.x_bigint);
+            } else {
+                zig_unreachable();
+            }
             break;
         case IrBinOpBinAnd:
-            assert(is_int);
-            bigint_and(&out_val->data.x_bigint, &op1_val->data.x_bigint, &op2_val->data.x_bigint);
+            if (is_bool) {
+                out_val->data.x_bool = op1_val->data.x_bool & op2_val->data.x_bool;
+            } else if (is_int) {
+                bigint_and(&out_val->data.x_bigint, &op1_val->data.x_bigint, &op2_val->data.x_bigint);
+            } else {
+                zig_unreachable();
+            }
             break;
         case IrBinOpBitShiftLeftExact:
             assert(is_int);
@@ -14093,6 +14115,48 @@ static IrInstruction *ir_analyze_bit_shift(IrAnalyze *ira, IrInstructionBinOp *b
     return result;
 }
 
+static bool ok_bool_op(IrBinOp op) {
+    switch (op) {
+        case IrBinOpInvalid:
+            zig_unreachable();
+        case IrBinOpBinOr:
+        case IrBinOpBinXor:
+        case IrBinOpBinAnd:
+        case IrBinOpBoolOr:
+        case IrBinOpBoolAnd:
+        case IrBinOpCmpEq:
+        case IrBinOpCmpNotEq:
+            return true;
+
+        case IrBinOpAdd:
+        case IrBinOpSub:
+        case IrBinOpMult:
+        case IrBinOpDivUnspecified:
+        case IrBinOpDivTrunc:
+        case IrBinOpDivFloor:
+        case IrBinOpDivExact:
+        case IrBinOpRemRem:
+        case IrBinOpRemMod:
+        case IrBinOpCmpLessThan:
+        case IrBinOpCmpGreaterThan:
+        case IrBinOpCmpLessOrEq:
+        case IrBinOpCmpGreaterOrEq:
+        case IrBinOpBitShiftLeftLossy:
+        case IrBinOpBitShiftLeftExact:
+        case IrBinOpBitShiftRightLossy:
+        case IrBinOpBitShiftRightExact:
+        case IrBinOpAddWrap:
+        case IrBinOpSubWrap:
+        case IrBinOpMultWrap:
+        case IrBinOpRemUnspecified:
+        case IrBinOpArrayCat:
+        case IrBinOpArrayMult:
+        case IrBinOpMergeErrorSets:
+            return false;
+    }
+    zig_unreachable();
+}
+
 static bool ok_float_op(IrBinOp op) {
     switch (op) {
         case IrBinOpInvalid:
@@ -14218,6 +14282,7 @@ static IrInstruction *ir_analyze_bin_op_math(IrAnalyze *ira, IrInstructionBinOp 
     if (type_is_invalid(resolved_type))
         return ira->codegen->invalid_instruction;
 
+    bool is_bool = resolved_type->id == ZigTypeIdBool;
     bool is_int = resolved_type->id == ZigTypeIdInt || resolved_type->id == ZigTypeIdComptimeInt;
     bool is_float = resolved_type->id == ZigTypeIdFloat || resolved_type->id == ZigTypeIdComptimeFloat;
     bool is_signed_div = (
@@ -14328,11 +14393,15 @@ static IrInstruction *ir_analyze_bin_op_math(IrAnalyze *ira, IrInstructionBinOp 
     bool ok = false;
     if (is_int) {
         ok = true;
+    } else if (is_bool && ok_bool_op(op_id)) {
+        ok = true;
     } else if (is_float && ok_float_op(op_id)) {
         ok = true;
     } else if (resolved_type->id == ZigTypeIdVector) {
         ZigType *elem_type = resolved_type->data.vector.elem_type;
         if (elem_type->id == ZigTypeIdInt || elem_type->id == ZigTypeIdComptimeInt) {
+            ok = true;
+        } else if ((elem_type->id == ZigTypeIdBool) && ok_bool_op(op_id)) {
             ok = true;
         } else if ((elem_type->id == ZigTypeIdFloat || elem_type->id == ZigTypeIdComptimeFloat) && ok_float_op(op_id)) {
             ok = true;

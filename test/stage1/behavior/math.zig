@@ -497,6 +497,23 @@ test "comptime_int multi-limb partial shift right" {
     }
 }
 
+test "bitwise on bools" {
+    test_bitwise_on_bools();
+    comptime test_bitwise_on_bools();
+}
+
+fn test_bitwise_on_bools() void {
+    expect(false ^ false == false);
+    expect(false ^ true == true);
+    expect(true ^ true == false);
+    expect(false & false == false);
+    expect(false & true == false);
+    expect(true & true == true);
+    expect(false | false == false);
+    expect(false | true == true);
+    expect(true | true == true);
+}
+
 test "xor" {
     test_xor();
     comptime test_xor();
