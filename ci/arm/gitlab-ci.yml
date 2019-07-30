@@ -1,0 +1,8 @@
+linux-arm64:
+  script:
+    - mkdir build
+    - cd build
+    - cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja
+    - ninja install
+    - ./zig build --build-file ../build.zig test
+
