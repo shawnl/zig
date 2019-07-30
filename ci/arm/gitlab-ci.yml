@@ -1,7 +1,9 @@
 linux-arm64:
   script:
+    - lscpu
+    - free -h
     - mkdir build
     - cd build
-    - cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja
-    - PATH=/usr/lib/ccache:$PATH ninja install
+    - PATH=/usr/lib/ccache:$PATH cmake .. -DCMAKE_BUILD_TYPE=Release -GNinja
+    - ninja install
     - ./zig build --build-file ../build.zig test
