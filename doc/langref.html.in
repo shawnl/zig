@@ -7992,6 +7992,30 @@ pub const TypeInfo = union(TypeId) {
       {#link|pointer|Pointers#}. The mask may be any vector length that the target supports, and its' length determines the result length.
       </p>
       {#header_close#}
+
+      {#header_open|@gather#}
+      <pre>{#syntax#}@gather(comptime ElemType: type, ptrs: @Vector(mask.len, *ElemType), mask: @Vector(mask.len, bool), pass: @Vector(mask.len, ElemType)) @Vector(mask.len, ElemType){#endsyntax#}</pre>
+      <p>
+      Loads the elements pointed to by {#syntax#}ptrs{#endsyntax#}, if the corresponding bit of {#syntax#}mask{#endsyntax#}
+      is {#syntax#}true{#endsyntax#}, otherwise the corresponding element from {#syntax#}pass{#endsyntax#}.
+      </p>
+      <p>
+      {#syntax#}ElemType{#endsyntax#} must be an {#link|integer|Integers#}, a {#link|bool|Primitive Types#}, a {#link|float|Floats#}, or a
+      {#link|pointer|Pointers#}.
+      </p>
+      {#header_close#}
+
+      {#header_open|@scatter#}
+      <pre>{#syntax#}@scatter(comptime ElemType: type, data: @Vector(mask.len, ElemType), ptrs: @Vector(mask.len, *ElemType), mask: @Vector(mask.len, bool)) void{#endsyntax#}</pre>
+      <p>
+      Stores the elements of {#syntax#}data{#endsyntax#} to the locations of {#syntax#}ptrs{#endsyntax#}, if the corresponding bit of {#syntax#}mask{#endsyntax#}
+      is {#syntax#}true{#endsyntax#}.
+      </p>
+      <p>
+      {#syntax#}ElemType{#endsyntax#} must be an {#link|integer|Integers#}, a {#link|bool|Primitive Types#}, a {#link|float|Floats#}, or a
+      {#link|pointer|Pointers#}.
+      </p>
+      {#header_close#}
       {#header_close#}
 
       {#header_open|Build Mode#}

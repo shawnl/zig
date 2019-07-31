@@ -375,6 +375,28 @@ static bool instr_is_comptime(IrInstruction *instruction) {
     return value_is_comptime(&instruction->value);
 }
 
+static bool gather_scatter_endpoints_are_comptime(IrInstruction *ptrs, IrInstruction *mask) {
+    if (!instr_is_comptime(ptrs))
+        return false;
+    if (!instr_is_comptime(mask))
+        return false;
+    assert(ptrs->value.type->id == ZigTypeIdVector);
+    assert(ptrs->value.type->data.vector.elem_type->id == ZigTypeIdPointer);
+    assert(mask->value.type->id == ZigTypeIdVector);
+    assert(mask->value.type->data.vector.elem_type->id == ZigTypeIdBool);
+    for (uint32_t i = 0; i < ptrs->value.type->data.vector.len; i++) {
+        ConstExprValue *mask_val = &mask->value.data.x_array.data.s_none.elements[i];
+        if (mask_val->special == ConstValSpecialStatic && mask_val->data.x_bool == false)
+            continue;
+        ConstExprValue *ptr = &ptrs->value.data.x_array.data.s_none.elements[i];
+        if (!value_is_comptime(ptr))
+            return false;
+        if (!value_is_comptime(ptr->data.x_ptr.data.ref.pointee))
+            return false;
+    }
+    return true;
+}
+
 static bool instr_is_unreachable(IrInstruction *instruction) {
     return instruction->value.type && instruction->value.type->id == ZigTypeIdUnreachable;
 }
@@ -732,6 +754,14 @@ static constexpr IrInstructionId ir_instruction_id(IrInstructionVectorType *) {
 
 static constexpr IrInstructionId ir_instruction_id(IrInstructionShuffleVector *) {
     return IrInstructionIdShuffleVector;
+}
+
+static constexpr IrInstructionId ir_instruction_id(IrInstructionGather *) {
+    return IrInstructionIdGather;
+}
+
+static constexpr IrInstructionId ir_instruction_id(IrInstructionScatter *) {
+    return IrInstructionIdScatter;
 }
 
 static constexpr IrInstructionId ir_instruction_id(IrInstructionSplat *) {
@@ -2395,6 +2425,40 @@ static IrInstruction *ir_build_shuffle_vector(IrBuilder *irb, Scope *scope, AstN
     return &instruction->base;
 }
 
+static IrInstruction *ir_build_gather(IrBuilder *irb, Scope *scope, AstNode *source_node,
+    IrInstruction *type, IrInstruction *ptr, IrInstruction *mask, IrInstruction *vector, BuiltinFnId op) {
+    IrInstructionGather *instruction = ir_build_instruction<IrInstructionGather>(irb, scope, source_node);
+
+    instruction->scalar_type = type;
+    instruction->ptr = ptr;
+    instruction->mask = mask;
+    instruction->vector = vector;
+
+    if (type != nullptr) ir_ref_instruction(type, irb->current_basic_block);
+    ir_ref_instruction(ptr, irb->current_basic_block);
+    ir_ref_instruction(mask, irb->current_basic_block);
+    ir_ref_instruction(vector, irb->current_basic_block);
+
+    return &instruction->base;
+}
+
+static IrInstruction *ir_build_scatter(IrBuilder *irb, Scope *scope, AstNode *source_node,
+    IrInstruction *type, IrInstruction *vector, IrInstruction *ptr, IrInstruction *mask, BuiltinFnId op) {
+    IrInstructionScatter *instruction = ir_build_instruction<IrInstructionScatter>(irb, scope, source_node);
+
+    instruction->scalar_type = type;
+    instruction->ptr = ptr;
+    instruction->mask = mask;
+    instruction->vector = vector;
+
+    if (type != nullptr) ir_ref_instruction(type, irb->current_basic_block);
+    ir_ref_instruction(ptr, irb->current_basic_block);
+    ir_ref_instruction(mask, irb->current_basic_block);
+    ir_ref_instruction(vector, irb->current_basic_block);
+
+    return &instruction->base;
+}
+
 static IrInstruction *ir_build_splat(IrBuilder *irb, Scope *scope, AstNode *source_node,
     IrInstruction *len, IrInstruction *scalar)
 {
@@ -2563,8 +2627,35 @@ static IrInstruction *ir_build_overflow_op(IrBuilder *irb, Scope *scope, AstNode
 //TODO Powi, Pow, minnum, maxnum, maximum, minimum, copysign,
 // lround, llround, lrint, llrint
 // So far this is only non-complicated type functions.
-const char *float_op_to_name(BuiltinFnId op, bool llvm_name) {
+// fn_id is used for sanity checking.
+const char *builtin_op_to_name(BuiltinFnId op, bool llvm_name, ZigLLVMFnId fn_id) {
     const bool b = llvm_name;
+
+
+    switch (op) {
+    case BuiltinFnIdSqrt:
+    case BuiltinFnIdSin:
+    case BuiltinFnIdCos:
+    case BuiltinFnIdExp:
+    case BuiltinFnIdExp2:
+    case BuiltinFnIdLn:
+    case BuiltinFnIdLog10:
+    case BuiltinFnIdLog2:
+    case BuiltinFnIdFabs:
+    case BuiltinFnIdFloor:
+    case BuiltinFnIdCeil:
+    case BuiltinFnIdTrunc:
+    case BuiltinFnIdNearbyInt:
+    case BuiltinFnIdRound:
+        assert(fn_id == ZigLLVMFnIdFloatOp);
+        break;
+    case BuiltinFnIdGather:
+    case BuiltinFnIdScatter:
+        assert(fn_id == ZigLLVMFnIdMaskedVector);
+        break;
+    default:
+        zig_unreachable();
+    }
 
     switch (op) {
     case BuiltinFnIdSqrt:
@@ -2595,6 +2686,10 @@ const char *float_op_to_name(BuiltinFnId op, bool llvm_name) {
         return b ? "nearbyint" : "nearbyInt";
     case BuiltinFnIdRound:
         return "round";
+    case BuiltinFnIdGather:
+        return b ? "masked.gather" : "gather";
+    case BuiltinFnIdScatter:
+        return b ? "masked.scatter" : "scatter";
     default:
         zig_unreachable();
     }
@@ -5168,6 +5263,38 @@ static IrInstruction *ir_gen_builtin_fn_call(IrBuilder *irb, Scope *scope, AstNo
                 IrInstruction *shuffle_vector = ir_build_shuffle_vector(irb, scope, node,
                     arg0_value, arg1_value, arg2_value, arg3_value);
                 return ir_lval_wrap(irb, scope, shuffle_vector, lval, result_loc);
+            }
+        case BuiltinFnIdGather:
+        case BuiltinFnIdScatter:
+            {
+                AstNode *arg0_node = node->data.fn_call_expr.params.at(0);
+                IrInstruction *arg0_value = ir_gen_node(irb, arg0_node, scope);
+                if (arg0_value == irb->codegen->invalid_instruction)
+                    return arg0_value;
+
+                AstNode *arg1_node = node->data.fn_call_expr.params.at(1);
+                IrInstruction *arg1_value = ir_gen_node(irb, arg1_node, scope);
+                if (arg1_value == irb->codegen->invalid_instruction)
+                    return arg1_value;
+
+                AstNode *arg2_node = node->data.fn_call_expr.params.at(2);
+                IrInstruction *arg2_value = ir_gen_node(irb, arg2_node, scope);
+                if (arg2_value == irb->codegen->invalid_instruction)
+                    return arg2_value;
+
+                AstNode *arg3_node = node->data.fn_call_expr.params.at(3);
+                IrInstruction *arg3_value = ir_gen_node(irb, arg3_node, scope);
+                if (arg3_value == irb->codegen->invalid_instruction)
+                    return arg3_value;
+                IrInstruction *masked_vector;
+                if (builtin_fn->id == BuiltinFnIdGather) {
+                    masked_vector = ir_build_gather(irb, scope, node,
+                        arg0_value, arg1_value, arg2_value, arg3_value, builtin_fn->id);
+                } else if (builtin_fn->id == BuiltinFnIdScatter) {
+                    masked_vector = ir_build_scatter(irb, scope, node,
+                        arg0_value, arg1_value, arg2_value, arg3_value, builtin_fn->id);
+                }
+                return ir_lval_wrap(irb, scope, masked_vector, lval, result_loc);
             }
         case BuiltinFnIdSplat:
             {
@@ -22844,6 +22971,203 @@ static IrInstruction *ir_analyze_instruction_shuffle_vector(IrAnalyze *ira, IrIn
     return result;
 }
 
+static IrInstruction *ir_analyze_instruction_masked_vector(IrAnalyze *ira, IrInstructionMaskedVector *instruction, BuiltinFnId op) {
+    ZigType *scalar_type = ir_resolve_type(ira, instruction->scalar_type);
+    assert(scalar_type);
+    if (type_is_invalid(scalar_type))
+        return ira->codegen->invalid_instruction;
+
+    IrInstruction *ptr = instruction->ptr->child;
+    IrInstruction *vector = instruction->vector->child;
+    IrInstruction *mask = instruction->mask->child;
+    assert(ptr && vector && mask);
+
+    if (scalar_type->id != ZigTypeIdBool &&
+        scalar_type->id != ZigTypeIdInt &&
+        scalar_type->id != ZigTypeIdFloat &&
+        scalar_type->id != ZigTypeIdPointer) {
+        ir_add_error(ira, instruction->scalar_type,
+            buf_sprintf("@%s type argument must be int, bool, float or pointer; not '%s'",
+                builtin_op_to_name(op, false, ZigLLVMFnIdMaskedVector),
+                buf_ptr(&scalar_type->name)));
+        return ira->codegen->invalid_instruction;
+    }
+
+    ZigType *mask_type = mask->value.type;
+    if (type_is_invalid(mask_type))
+        return ira->codegen->invalid_instruction;
+
+    const char *masked_vector_mask_fail_fmt = "@%s mask operand must be a vector of bools, got '%s'";
+
+    if (mask_type->id == ZigTypeIdArray) {
+        zig_panic("TODO gather/scatter cast from array");
+    }
+
+    if (mask_type->id != ZigTypeIdVector) {
+        ir_add_error(ira, mask,
+            buf_sprintf(masked_vector_mask_fail_fmt,
+                builtin_op_to_name(op, false, ZigLLVMFnIdMaskedVector),
+                buf_ptr(&mask->value.type->name)));
+        return ira->codegen->invalid_instruction;
+    }
+
+    ZigType *mask_scalar_type = mask_type->data.array.child_type;
+    if (mask_scalar_type->id != ZigTypeIdBool) {
+        ir_add_error(ira, mask,
+            buf_sprintf(masked_vector_mask_fail_fmt,
+                builtin_op_to_name(op, false, ZigLLVMFnIdMaskedVector),
+                buf_ptr(&mask->value.type->name)));
+        return ira->codegen->invalid_instruction;
+    }
+
+    uint32_t len_vector = mask->value.type->data.vector.len;
+    ZigType *expected_vector_type = get_vector_type(ira->codegen, len_vector, scalar_type);
+    ZigType *expected_pointer_type = get_vector_type(ira->codegen, len_vector,
+        get_pointer_to_type(ira->codegen, scalar_type, true));
+    if (vector->value.type->id != ZigTypeIdVector) {
+        if (vector->value.type->id != ZigTypeIdUndefined) {
+            ir_add_error(ira, vector,
+                buf_sprintf("expected type '%s' got '%s'",
+                    buf_ptr(&expected_vector_type->name),
+                    buf_ptr(&vector->value.type->name)));
+            return ira->codegen->invalid_instruction;
+        } else {
+            vector = ir_const_undef(ira, vector, expected_vector_type);
+            expand_undef_array(ira->codegen, &vector->value);
+        }
+    } else {
+        // FIXME matching types is probably more complicated than this
+        if (vector->value.type->data.vector.elem_type != scalar_type) {
+            ir_add_error(ira, vector,
+                buf_sprintf("expected vector of element type '%s' got '%s'",
+                    buf_ptr(&scalar_type->name),
+                    buf_ptr(&vector->value.type->data.vector.elem_type->name)));
+            return ira->codegen->invalid_instruction;
+        }
+        if (vector->value.type->data.vector.len != len_vector) {
+            ir_add_error(ira, vector,
+                buf_sprintf("expected vector of length %" PRIu32 ", not %" PRIu32,
+                    len_vector, vector->value.type->data.vector.len));
+            return ira->codegen->invalid_instruction;
+        }
+    }
+
+    if (ptr->value.type->id != ZigTypeIdVector) {
+        if (ptr->value.type->id != ZigTypeIdUndefined) {
+            ir_add_error(ira, ptr,
+                buf_sprintf("expected type '%s' got '%s'",
+                    buf_ptr(&expected_pointer_type->name),
+                    buf_ptr(&ptr->value.type->name)));
+            return ira->codegen->invalid_instruction;
+        }
+    } else {
+        if (ptr->value.type->data.vector.elem_type->id != ZigTypeIdPointer) {
+            ir_add_error(ira, ptr,
+                buf_sprintf("expected vector of element type '%s' got '%s'",
+                    buf_ptr(&expected_pointer_type->name),
+                    buf_ptr(&ptr->value.type->data.vector.elem_type->name)));
+            return ira->codegen->invalid_instruction;
+        }
+        // FIXME matching types is probably more complicated than this
+        if (ptr->value.type->data.vector.elem_type->data.pointer.child_type != scalar_type) {
+            ir_add_error(ira, ptr,
+                buf_sprintf("expected vector of element type '%s' got '%s'",
+                    buf_ptr(&expected_pointer_type->name),
+                    buf_ptr(&ptr->value.type->data.vector.elem_type->name)));
+            return ira->codegen->invalid_instruction;
+        }
+        if (ptr->value.type->data.vector.len != len_vector) {
+            ir_add_error(ira, ptr,
+                buf_sprintf("expected vector of length %" PRIu32 ", not %" PRIu32,
+                    len_vector, vector->value.type->data.vector.len));
+            return ira->codegen->invalid_instruction;
+        }
+    }
+
+    // FIXME this doesn't work with pointers inside of values (arrays), because
+    // of current limitations of the stage1 compiler.
+    if (instr_is_comptime(vector) && gather_scatter_endpoints_are_comptime(ptr, mask)) {
+        zig_panic("TODO, comptime gather/scatter requires significant stage1 work");
+        if (op == BuiltinFnIdGather) {
+            IrInstruction *result = ir_const_undef(ira, &instruction->base, expected_vector_type);
+            result->value.data.x_array.data.s_none.elements =
+                allocate<ConstExprValue>(len_vector);
+            ConstExprValue *mask_val = ir_resolve_const(ira, mask, UndefOk);
+            for (uint32_t i = 0; i < len_vector; i++) {
+                ConstExprValue *cur_mask = &mask_val->data.x_array.data.s_none.elements[i];
+                ConstExprValue *cur = &result->value.data.x_array.data.s_none.elements[i];
+                if (cur_mask->special == ConstValSpecialUndef) {
+                    cur->special = ConstValSpecialUndef;
+                    cur->type = scalar_type;
+                } else if (cur_mask->data.x_bool) {
+                    if (ptr->value.special == ConstValSpecialUndef ||
+                        ptr->value.data.x_array.data.s_none.elements[i].special == ConstValSpecialUndef) {
+                        cur->special = ConstValSpecialUndef;
+                        cur->type = scalar_type;
+                    } else {
+                        assert(ptr->value.data.x_array.data.s_none.elements[i].data.x_ptr.data.ref.pointee->type ==
+                            scalar_type);
+                        cur = ptr->value.data.x_array.data.s_none.elements[i].data.x_ptr.data.ref.pointee;
+                    }
+                } else {
+                    if (vector->value.special == ConstValSpecialUndef) {
+                        cur->special = ConstValSpecialUndef;
+                        cur->type = scalar_type;
+                    } else {
+                        assert(vector->value.data.x_array.data.s_none.elements[i].type);
+                        cur = &vector->value.data.x_array.data.s_none.elements[i];
+                    }
+                }
+                cur->special = ConstValSpecialStatic;
+            }
+            result->value.type = expected_vector_type;
+            result->value.special = ConstValSpecialStatic;
+            return result;
+        } else if (op == BuiltinFnIdScatter) {
+            ConstExprValue *mask_val = ir_resolve_const(ira, mask, UndefOk);
+            for (uint32_t i = 0; i < len_vector; i++) {
+                ConstExprValue *cur_mask = &mask_val->data.x_array.data.s_none.elements[i];
+                ConstExprValue *dest = ptr->value.data.x_array.data.s_none.elements[i].data.x_ptr.data.ref.pointee;
+                if (cur_mask->special == ConstValSpecialUndef ||
+                    vector->value.data.x_array.data.s_none.elements[i].special == ConstValSpecialUndef) {
+                    dest->special = ConstValSpecialUndef;
+                } else if (cur_mask->data.x_bool) {
+                    assert(scalar_type == dest->type);
+                    *dest = vector->value.data.x_array.data.s_none.elements[i];
+                } else {
+                    ; // Nothing
+                }
+            }
+            IrInstruction *result = ir_const_void(ira, &instruction->base);
+            result->value.type = ira->codegen->builtin_types.entry_void;
+            return result;
+        }
+    }
+
+    IrInstruction *result;
+    if (op == BuiltinFnIdScatter) {
+        result = ir_build_scatter(&ira->new_irb, instruction->base.scope, instruction->base.source_node,
+            instruction->scalar_type->child, vector, instruction->ptr->child, mask, op);
+        result->value.type = ira->codegen->builtin_types.entry_void;
+    } else if (op == BuiltinFnIdGather) {
+        result = ir_build_gather(&ira->new_irb, instruction->base.scope, instruction->base.source_node,
+            instruction->scalar_type->child, instruction->ptr->child, mask, vector, op);
+        result->value.type = vector->value.type;
+    } else {
+        zig_unreachable();
+    }
+    result->value.special = ConstValSpecialRuntime;
+    return result;
+}
+
+static IrInstruction *ir_analyze_instruction_gather(IrAnalyze *ira, IrInstructionGather *instruction) {
+    return ir_analyze_instruction_masked_vector(ira, (IrInstructionMaskedVector*)instruction, BuiltinFnIdGather);
+}
+
+static IrInstruction *ir_analyze_instruction_scatter(IrAnalyze *ira, IrInstructionScatter *instruction) {
+    return ir_analyze_instruction_masked_vector(ira, (IrInstructionMaskedVector*)instruction, BuiltinFnIdScatter);
+}
+
 static IrInstruction *ir_analyze_instruction_splat(IrAnalyze *ira, IrInstructionSplat *instruction) {
     IrInstruction *len = instruction->len->child;
     if (type_is_invalid(len->value.type))
@@ -26092,7 +26416,8 @@ static IrInstruction *ir_analyze_instruction_float_op(IrAnalyze *ira, IrInstruct
     // Only allow float types, and vectors of floats.
     ZigType *float_type = (expr_type->id == ZigTypeIdVector) ? expr_type->data.vector.elem_type : expr_type;
     if (float_type->id != ZigTypeIdFloat && float_type->id != ZigTypeIdComptimeFloat) {
-        ir_add_error(ira, instruction->type, buf_sprintf("@%s does not support type '%s'", float_op_to_name(instruction->op, false), buf_ptr(&float_type->name)));
+        ir_add_error(ira, instruction->type, buf_sprintf("@%s does not support type '%s'",
+            builtin_op_to_name(instruction->op, false, ZigLLVMFnIdFloatOp), buf_ptr(&float_type->name)));
         return ira->codegen->invalid_instruction;
     }
 
@@ -26110,7 +26435,7 @@ static IrInstruction *ir_analyze_instruction_float_op(IrAnalyze *ira, IrInstruct
             float_type->data.floating.bit_count == 16 ||
             float_type->data.floating.bit_count == 128) &&
             instruction->op != BuiltinFnIdSqrt) {
-            ir_add_error(ira, instruction->type, buf_sprintf("@%s does not support type '%s'", float_op_to_name(instruction->op, false), buf_ptr(&float_type->name)));
+            ir_add_error(ira, instruction->type, buf_sprintf("@%s does not support type '%s'", builtin_op_to_name(instruction->op, false, ZigLLVMFnIdFloatOp), buf_ptr(&float_type->name)));
             return ira->codegen->invalid_instruction;
         }
 
@@ -26633,7 +26958,11 @@ static IrInstruction *ir_analyze_instruction_base(IrAnalyze *ira, IrInstruction 
             return ir_analyze_instruction_vector_type(ira, (IrInstructionVectorType *)instruction);
         case IrInstructionIdShuffleVector:
             return ir_analyze_instruction_shuffle_vector(ira, (IrInstructionShuffleVector *)instruction);
-         case IrInstructionIdSplat:
+        case IrInstructionIdGather:
+            return ir_analyze_instruction_gather(ira, (IrInstructionGather *)instruction);
+        case IrInstructionIdScatter:
+            return ir_analyze_instruction_scatter(ira, (IrInstructionScatter *)instruction);
+        case IrInstructionIdSplat:
             return ir_analyze_instruction_splat(ira, (IrInstructionSplat *)instruction);
         case IrInstructionIdBoolNot:
             return ir_analyze_instruction_bool_not(ira, (IrInstructionBoolNot *)instruction);
@@ -26941,10 +27270,12 @@ bool ir_has_side_effects(IrInstruction *instruction) {
         case IrInstructionIdOptionalWrap:
         case IrInstructionIdVectorToArray:
         case IrInstructionIdResetResult:
+        case IrInstructionIdScatter:
             return true;
 
         case IrInstructionIdVectorElem:
         case IrInstructionIdExtract:
+        case IrInstructionIdGather:
         case IrInstructionIdPhi:
         case IrInstructionIdUnOp:
         case IrInstructionIdBinOp:
