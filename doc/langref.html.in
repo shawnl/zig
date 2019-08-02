@@ -1247,11 +1247,13 @@ a &= b{#endsyntax#}</pre></td>
           <td>
             <ul>
               <li>{#link|Integers#}</li>
+              <li>{#link|bool#}</li>
             </ul>
           </td>
           <td>Bitwise AND.
             <ul>
               <li>Invokes {#link|Peer Type Resolution#} for the operands.</li>
+              <li>Both operands (if they are functions) are evaluated.</li>
             </ul>
           </td>
           <td>
@@ -1264,11 +1266,13 @@ a |= b{#endsyntax#}</pre></td>
           <td>
             <ul>
               <li>{#link|Integers#}</li>
+              <li>{#link|bool|Primitive Types#}</li>
             </ul>
           </td>
           <td>Bitwise OR.
             <ul>
               <li>Invokes {#link|Peer Type Resolution#} for the operands.</li>
+              <li>Both operands (if they are functions) are evaluated.</li>
             </ul>
           </td>
           <td>
@@ -1281,6 +1285,7 @@ a ^= b{#endsyntax#}</pre></td>
           <td>
             <ul>
               <li>{#link|Integers#}</li>
+              <li>{#link|bool|Primitive Types#}</li>
             </ul>
           </td>
           <td>Bitwise XOR.
@@ -1297,6 +1302,7 @@ a ^= b{#endsyntax#}</pre></td>
           <td>
             <ul>
               <li>{#link|Integers#}</li>
+              <li>{#link|bool#}</li>
             </ul>
           </td>
           <td>
@@ -1317,6 +1323,9 @@ a ^= b{#endsyntax#}</pre></td>
                       returns {#syntax#}b{#endsyntax#} ("default value"),
                           otherwise returns the unwrapped value of {#syntax#}a{#endsyntax#}.
                               Note that {#syntax#}b{#endsyntax#} may be a value of type {#link|noreturn#}.
+            <ul>
+              <li>If {#syntax#}a{#endsyntax#} is {#syntax#}false{#endsyntax#}, b is not evaluated.</li>
+            </ul>
           </td>
           <td>
             <pre>{#syntax#}const value: ?u32 = null;
