@@ -506,3 +506,23 @@ test "vector | & ^" {
     S.doTheTest();
     comptime S.doTheTest();
 }
+
+test "truncating shift left" {
+    testShlTrunc(@splat(2, u16(std.math.maxInt(u16))));
+    comptime testShlTrunc(@splat(2, u16(std.math.maxInt(u16))));
+}
+fn testShlTrunc(x: @Vector(2, u16)) void {
+    const all = std.vector.all;
+    const shifted = x << @splat(2, u4(1));
+    expect(all(shifted == @splat(2, u16(65534))));
+}
+
+test "truncating shift right" {
+    testShrTrunc(@splat(2, u16(std.math.maxInt(u16))));
+    comptime testShrTrunc(@splat(2, u16(std.math.maxInt(u16))));
+}
+fn testShrTrunc(x: @Vector(2, u16)) void {
+    const all = std.vector.all;
+    const shifted = x >> @splat(2, u4(1));
+    expect(all(shifted == @splat(2, u16(32767))));
+}

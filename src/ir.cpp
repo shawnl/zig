@@ -14442,7 +14442,10 @@ static IrInstruction *ir_analyze_bit_shift(IrAnalyze *ira, IrInstructionBinOp *b
     if (type_is_invalid(op1->value.type))
         return ira->codegen->invalid_instruction;
 
-    if (op1->value.type->id != ZigTypeIdInt && op1->value.type->id != ZigTypeIdComptimeInt) {
+    bool is_vector = op1->value.type->id == ZigTypeIdVector;
+    ZigType *op1_scalar_type = is_vector ? op1->value.type->data.vector.elem_type : op1->value.type;
+
+    if (op1_scalar_type->id != ZigTypeIdInt && op1->value.type->id != ZigTypeIdComptimeInt) {
         ir_add_error(ira, &bin_op_instruction->base,
             buf_sprintf("bit shifting operation expected integer type, found '%s'",
                 buf_ptr(&op1->value.type->name)));
@@ -14469,8 +14472,12 @@ static IrInstruction *ir_analyze_bit_shift(IrAnalyze *ira, IrInstructionBinOp *b
             return ira->codegen->invalid_instruction;
         }
     } else {
-        ZigType *shift_amt_type = get_smallest_unsigned_int_type(ira->codegen,
-                op1->value.type->data.integral.bit_count - 1);
+        ZigType *shift_amt_scalar_type = get_smallest_unsigned_int_type(ira->codegen,
+                op1_scalar_type->data.integral.bit_count - 1);
+        ZigType *shift_amt_type = shift_amt_scalar_type;
+        if (is_vector) {
+            shift_amt_type = get_vector_type(ira->codegen, op1->value.type->data.vector.len, shift_amt_type);
+        }
         if (bin_op_instruction->op_id == IrBinOpBitShiftLeftLossy &&
             op2->value.type->id == ZigTypeIdComptimeInt) {
             if (!bigint_fits_in_bits(&op2->value.data.x_bigint,
@@ -14487,7 +14494,7 @@ static IrInstruction *ir_analyze_bit_shift(IrAnalyze *ira, IrInstructionBinOp *b
                     op2->source_node,
                     buf_sprintf("value %s cannot fit into type %s",
                         buf_ptr(val_buf),
-                        buf_ptr(&shift_amt_type->name)));
+                        buf_ptr(&shift_amt_scalar_type->name)));
                 return ira->codegen->invalid_instruction;
             }
         }
@@ -14502,7 +14509,18 @@ static IrInstruction *ir_analyze_bit_shift(IrAnalyze *ira, IrInstructionBinOp *b
         if (op1_val == nullptr)
             return ira->codegen->invalid_instruction;
 
-        ConstExprValue *op2_val = ir_resolve_const(ira, casted_op2, UndefBad);
+        // This is just here to catch if it doesn't fit, as ir_analyze_math_op
+        // wants the types the same.
+        ConstExprValue *op2_casted_val = ir_resolve_const(ira, casted_op2, UndefBad);
+        if (op2_casted_val == nullptr)
+            return ira->codegen->invalid_instruction;
+
+        // Cast up so types match
+        IrInstruction *recasted_op2 = ir_implicit_cast(ira, casted_op2, op1->value.type);
+        if (recasted_op2 == nullptr)
+            return ira->codegen->invalid_instruction;
+
+        ConstExprValue *op2_val = ir_resolve_const(ira, recasted_op2, UndefBad);
         if (op2_val == nullptr)
             return ira->codegen->invalid_instruction;
 
@@ -14511,7 +14529,7 @@ static IrInstruction *ir_analyze_bit_shift(IrAnalyze *ira, IrInstructionBinOp *b
         ir_add_error(ira, &bin_op_instruction->base,
                 buf_sprintf("LHS of shift must be an integer type, or RHS must be compile-time known"));
         return ira->codegen->invalid_instruction;
-    } else if (instr_is_comptime(casted_op2) && bigint_cmp_zero(&casted_op2->value.data.x_bigint) == CmpEQ) {
+    } else if (instr_is_comptime(casted_op2) && !is_vector && bigint_cmp_zero(&casted_op2->value.data.x_bigint) == CmpEQ) {
         IrInstruction *result = ir_build_cast(&ira->new_irb, bin_op_instruction->base.scope,
                 bin_op_instruction->base.source_node, op1->value.type, op1, CastOpNoop);
         result->value.type = op1->value.type;
