@@ -1557,6 +1557,9 @@ enum BuiltinFnId {
     BuiltinFnIdSubWithOverflow,
     BuiltinFnIdMulWithOverflow,
     BuiltinFnIdShlWithOverflow,
+    BuiltinFnIdSaturatingAdd,
+    BuiltinFnIdSaturatingSub,
+    BuiltinFnIdSaturatingMul,
     BuiltinFnIdMulAdd,
     BuiltinFnIdCInclude,
     BuiltinFnIdCDefine,
@@ -2451,6 +2454,7 @@ enum IrInstructionId {
     IrInstructionIdFrameSizeGen,
     IrInstructionIdAlignOf,
     IrInstructionIdOverflowOp,
+    IrInstructionIdSaturatingOp,
     IrInstructionIdTestErrSrc,
     IrInstructionIdTestErrGen,
     IrInstructionIdMulAdd,
@@ -3290,6 +3294,21 @@ struct IrInstructionOverflowOp {
     IrInstruction *result_ptr;
 
     ZigType *result_ptr_type;
+};
+
+enum IrSaturatingOp {
+    IrSaturatingOpAdd, // signed and unsigned
+    IrSaturatingOpSub, // signed and unsigned
+    IrSaturatingOpMul, // signed and unsigned
+};
+
+struct IrInstructionSaturatingOp {
+    IrInstruction base;
+
+    IrSaturatingOp op;
+    IrInstruction *type_value;
+    IrInstruction *op1;
+    IrInstruction *op2;
 };
 
 struct IrInstructionMulAdd {

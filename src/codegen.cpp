@@ -7881,6 +7881,9 @@ static void define_builtin_fns(CodeGen *g) {
     create_builtin_fn(g, BuiltinFnIdSubWithOverflow, "subWithOverflow", 4);
     create_builtin_fn(g, BuiltinFnIdMulWithOverflow, "mulWithOverflow", 4);
     create_builtin_fn(g, BuiltinFnIdShlWithOverflow, "shlWithOverflow", 4);
+    create_builtin_fn(g, BuiltinFnIdSaturatingAdd, "saturatingAdd", 3);
+    create_builtin_fn(g, BuiltinFnIdSaturatingSub, "saturatingSub", 3);
+    create_builtin_fn(g, BuiltinFnIdSaturatingMul, "saturatingMul", 3);
     create_builtin_fn(g, BuiltinFnIdCInclude, "cInclude", 1);
     create_builtin_fn(g, BuiltinFnIdCDefine, "cDefine", 2);
     create_builtin_fn(g, BuiltinFnIdCUndef, "cUndef", 1);

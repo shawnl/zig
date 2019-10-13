@@ -1,4 +1,4 @@
-const std = @import("std.zig");
+const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const mem = std.mem; // For mem.Compare
@@ -511,11 +511,6 @@ fn testCompare(l: *Node, r: *Node) mem.Compare {
 }
 
 test "rb" {
-    if (@import("builtin").arch == .aarch64) {
-        // TODO https://github.com/ziglang/zig/issues/3288
-        return error.SkipZigTest;
-    }
-
     var tree: Tree = undefined;
     var ns: [10]testNumber = undefined;
     ns[0].value = 42;
