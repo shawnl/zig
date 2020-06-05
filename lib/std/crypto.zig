@@ -15,6 +15,11 @@ pub const Sha3_512 = sha3.Sha3_512;
 
 pub const gimli = @import("crypto/gimli.zig");
 
+const gnuhash = @import("crypto/gnuhash.zig");
+pub const GnuHash = gnuhash.GnuHash;
+pub const doGnuHashZ = gnuhash.doGnuHashZ;
+pub const doGnuHash = gnuhash.doGnuHash;
+
 const blake2 = @import("crypto/blake2.zig");
 pub const Blake2s224 = blake2.Blake2s224;
 pub const Blake2s256 = blake2.Blake2s256;
@@ -49,6 +54,7 @@ test "crypto" {
     _ = @import("crypto/blake3.zig");
     _ = @import("crypto/chacha20.zig");
     _ = @import("crypto/gimli.zig");
+    _ = @import("crypto/gnuhash.zig");
     _ = @import("crypto/hmac.zig");
     _ = @import("crypto/md5.zig");
     _ = @import("crypto/poly1305.zig");

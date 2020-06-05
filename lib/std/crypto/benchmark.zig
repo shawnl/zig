@@ -27,12 +27,14 @@ const hashes = [_]Crypto{
     Crypto{ .ty = crypto.Blake2s256, .name = "blake2s" },
     Crypto{ .ty = crypto.Blake2b512, .name = "blake2b" },
     Crypto{ .ty = crypto.Blake3, .name = "blake3" },
+    // Even with @fence(.SeqCst) gnuhash is too fast to measure with this benchmark
+    //Crypto{ .ty = crypto.GnuHash, .name = "gnuhash" },
 };
 
 pub fn benchmarkHash(comptime Hash: var, comptime bytes: comptime_int) !u64 {
     var h = Hash.init();
 
-    var block: [Hash.digest_length]u8 = undefined;
+    var block: [1024]u8 = undefined;
     prng.random.bytes(block[0..]);
 
     var offset: usize = 0;
