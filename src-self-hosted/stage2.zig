@@ -1288,3 +1288,6 @@ export fn stage2_clang_arg_next(it: *ClangArgIterator) Error {
     };
     return .None;
 }
+comptime {
+    @export(@import("bisect.zig").stage2_string_bisect_generate, .{ .name = "stage2_string_bisect_generate", .linkage = std.builtin.GlobalLinkage.Strong });
+}

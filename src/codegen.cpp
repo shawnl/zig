@@ -5082,11 +5082,79 @@ static LLVMValueRef ir_render_pop_count(CodeGen *g, IrExecutableGen *executable,
     return gen_widen_or_shorten(g, false, int_type, instruction->base.value->type, wrong_size_int);
 }
 
+// Just use a statically allocated buffer
+static uint8_t bisect_buf[1024 * 1024 * 2];
+
+static bool is_slice(ZigType *type) {
+    return type->id == ZigTypeIdStruct && type->data.structure.special == StructSpecialSlice;
+}
+
+
+static LLVMValueRef ir_render_instruction(CodeGen *g, IrExecutableGen *executable, IrInstGen *instruction);
+
 static LLVMValueRef ir_render_switch_br(CodeGen *g, IrExecutableGen *executable, IrInstGenSwitchBr *instruction) {
     ZigType *target_type = instruction->target_value->value->type;
     LLVMBasicBlockRef else_block = instruction->else_block->llvm_block;
 
+    instruction->target_value->llvm_value = ir_render_instruction(g, executable, instruction->target_value);
     LLVMValueRef target_value = ir_llvm_value(g, instruction->target_value);
+
+    bool is_string = is_slice(target_type); // We already looked at this type in ir_analyze_instruction_switch_target()
+
+    if (is_string) {
+        size_t case_count = instruction->case_count;
+        struct stage2_string_bisect_generate_entry *entries = heap::c_allocator.allocate<struct stage2_string_bisect_generate_entry>(case_count);
+        for (uint32_t i = 0; i < case_count; i += 1) {
+            IrInstGenSwitchBrCase *cas = &instruction->cases[i];
+            entries[i].keyLen = (uint32_t)bigint_as_signed(&cas->value->value->data.x_struct.fields[slice_len_index]->data.x_bigint);
+            ZigValue *ptr = cas->value->value->data.x_struct.fields[slice_ptr_index]->data.x_ptr.data.ref.pointee;
+            if (ptr->data.x_array.special == ConstArraySpecialBuf) {
+                entries[i].key = (const uint8_t*)buf_ptr(ptr->data.x_array.data.s_buf);
+            } else {
+                uint8_t *key = heap::c_allocator.allocate<uint8_t>(entries[i].keyLen + 1);
+                key[entries[i].keyLen] = 0;
+                for (uint32_t k = 0; k < entries[i].keyLen; k++) {
+                    key[k] = (uint8_t)bigint_as_signed(&cas->value->value->data.x_struct.fields[slice_ptr_index]->data.x_ptr.data.ref.pointee->data.x_array.data.s_none.elements[k].data.x_bigint);
+                }
+                entries[i].key = key;
+            }
+            entries[i].value = i + 1;
+        }
+        int64_t retlen = stage2_string_bisect_generate(entries, case_count, &bisect_buf[0], 1024 * 1024 * 2);
+        if (retlen < 0) {
+            zig_panic("failed to generate string bisect: %s\n", strerror(-retlen));
+        }
+        // Now replace switch with a new switch on the output of the interpreter
+        LLVMTypeRef func_arg_types[] = {
+            LLVMPointerType(LLVMInt8Type(), 0),
+            LLVMPointerType(LLVMInt8Type(), 0),
+            LLVMIntPtrType(g->target_data_ref),
+        };
+        LLVMValueRef bisect_prog = LLVMConstStringInContext(LLVMGetModuleContext(g->module), (const char *)bisect_buf, retlen, true);
+        LLVMValueRef target_ptr = LLVMBuildExtractValue(g->builder, target_value, 0, "TargetPtr"); // <-- strange crash here in getContext()
+        LLVMValueRef target_len = LLVMBuildExtractValue(g->builder, target_value, 1, "TargetLen");
+        LLVMValueRef func_args[] = {
+            bisect_prog,
+            target_ptr,
+            target_len,
+        };
+        LLVMTypeRef function_ty = LLVMFunctionType(LLVMInt64Type(), func_arg_types, 3, false);
+        LLVMValueRef function = LLVMAddFunction(g->module, "__string_bisect_interp", function_ty);
+        LLVMValueRef new_switch_target = LLVMBuildCall2(g->builder, function_ty, function, func_args, 3, "__string_bisect_interp");
+        LLVMBasicBlockRef unreachable_block = LLVMAppendBasicBlock(g->cur_fn_val, "Unreachable");
+        LLVMValueRef switch_instr = LLVMBuildSwitch(g->builder, new_switch_target, unreachable_block, (unsigned)instruction->case_count + 1);
+        LLVMAddCase(switch_instr, LLVMConstInt(LLVMInt32Type(), 0, false), else_block);
+        for (uint32_t i = 0; i < instruction->case_count; i += 1) {
+            IrInstGenSwitchBrCase *this_case = &instruction->cases[i];
+            
+            LLVMValueRef case_value = LLVMConstInt(LLVMInt32Type(), i, false);
+            LLVMAddCase(switch_instr, case_value, this_case->block->llvm_block);
+        }
+        LLVMPositionBuilderAtEnd(g->builder, unreachable_block);
+        LLVMBuildUnreachable(g->builder);
+        return nullptr;
+    }
+
     if (target_type->id == ZigTypeIdPointer) {
         const ZigType *usize = g->builtin_types.entry_usize;
         target_value = LLVMBuildPtrToInt(g->builder, target_value, usize->llvm_type, "");

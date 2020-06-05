@@ -23063,12 +23063,20 @@ static IrInstGen *ir_analyze_instruction_switch_br(IrAnalyze *ira,
         }
     }
 
+    ZigType *target_type = target_value->value->type;
 
     size_t case_count = switch_br_instruction->case_count;
 
     bool is_comptime;
     if (!ir_resolve_comptime(ira, switch_br_instruction->is_comptime->child, &is_comptime))
         return ira->codegen->invalid_inst_gen;
+
+    bool is_string = is_slice(target_type) || (target_type->id == ZigTypeIdPointer && is_slice(target_type->data.pointer.child_type));
+    
+    if (is_string && !is_slice(target_type)) {
+        target_value = ir_get_deref(ira, &switch_br_instruction->base.base, target_value, no_result_loc());
+        target_type = target_type->data.pointer.child_type;
+    }
 
     if (is_comptime || instr_is_comptime(target_value)) {
         ZigValue *target_val = ir_resolve_const(ira, target_value, UndefBad);
@@ -23082,7 +23090,12 @@ static IrInstGen *ir_analyze_instruction_switch_br(IrAnalyze *ira,
             if (type_is_invalid(case_value->value->type))
                 return ir_unreach_error(ira);
 
-            IrInstGen *casted_case_value = ir_implicit_cast(ira, case_value, target_value->value->type);
+            ZigType *implicit_cast_target = target_type;
+            if (is_string && case_value->value->type->id == ZigTypeIdArray) {
+                implicit_cast_target = get_array_type(ira->codegen, ira->codegen->builtin_types.entry_u8, case_value->value->type->data.array.len, ira->codegen->intern.for_zero_byte());
+            }
+
+            IrInstGen *casted_case_value = ir_implicit_cast(ira, case_value, implicit_cast_target);
             if (type_is_invalid(casted_case_value->value->type))
                 return ir_unreach_error(ira);
 
@@ -23250,10 +23263,27 @@ static IrInstGen *ir_analyze_instruction_switch_target(IrAnalyze *ira,
             enum_value->value->type = target_type;
             return enum_value;
         }
+        case ZigTypeIdStruct: {
+            if (!is_slice(target_type)) {
+                ir_add_error(ira, &switch_target_instruction->base.base,
+                    buf_sprintf("invalid switch target type '%s'", buf_ptr(&target_type->name)));
+                return ira->codegen->invalid_inst_gen;
+            }
+            /*
+            ZigType *ptr_u8_const_0 = get_pointer_to_type(ira->codegen, ira->codegen->builtin_types.entry_u8, true);
+            ptr_u8_const_0->data.pointer.ptr_len = PtrLenUnknown;
+            ptr_u8_const_0->data.pointer.sentinel = &ira->codegen->intern.zero_byte;
+            ZigType *slice_u8_const_0 = get_slice_type(ira->codegen, ptr_u8_const_0);
+            IrInstGen *slice_value = ir_get_deref(ira, &switch_target_instruction->base.base, target_value_ptr, nullptr);
+            IrInstGen *casted_value = ir_analyze_cast(ira, &switch_target_instruction->base.base, slice_u8_const_0, slice_value);
+            if (!casted_value)
+                return ira->codegen->invalid_inst_gen;
+            return casted_value;*/
+            return ir_get_deref(ira, &switch_target_instruction->base.base, target_value_ptr, nullptr);
+        }
         case ZigTypeIdErrorUnion:
         case ZigTypeIdUnreachable:
         case ZigTypeIdArray:
-        case ZigTypeIdStruct:
         case ZigTypeIdUndefined:
         case ZigTypeIdNull:
         case ZigTypeIdOptional:

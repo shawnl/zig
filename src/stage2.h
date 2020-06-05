@@ -379,4 +379,15 @@ ZIG_EXTERN_C void stage2_clang_arg_iterator(struct Stage2ClangArgIterator *it,
 // ABI warning
 ZIG_EXTERN_C enum Error stage2_clang_arg_next(struct Stage2ClangArgIterator *it);
 
+// ABI warning
+struct stage2_string_bisect_generate_entry {
+    const uint8_t * key; // NUL terminated, NUL does not count in length
+    uint32_t keyLen;
+    uint32_t value;
+};
+
+// ABI warning
+ZIG_EXTERN_C int64_t stage2_string_bisect_generate(struct stage2_string_bisect_generate_entry * ents,
+        uintptr_t entriesLen, uint8_t * resultBuffer, uintptr_t resultBufferLen);
+
 #endif

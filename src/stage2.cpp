@@ -322,3 +322,10 @@ enum Error stage2_clang_arg_next(struct Stage2ClangArgIterator *it) {
     const char *msg = "stage0 called stage2_clang_arg_next";
     stage2_panic(msg, strlen(msg));
 }
+
+
+int64_t stage2_string_bisect_generate(struct stage2_string_bisect_generate_entry * ents,
+        uintptr_t entriesLen, uint8_t * resultBuffer, uintptr_t resultBufferLen) {
+    const char *msg = "stage0 called stage2_string_bisect_generate";
+    stage2_panic(msg, strlen(msg));
+}
